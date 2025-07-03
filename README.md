@@ -1,169 +1,298 @@
-# Playwright Automation Platform
+# Guia de Configuração Windows - Node.js v18 + NGINX
 
-Uma plataforma moderna e elegante para automação com Playwright, oferecendo gerenciamento completo de scripts, monitoramento em tempo real e análise detalhada das execuções.
+Uma configuração completa para ambiente de produção no Windows com Node.js e NGINX como proxy reverso.
 
-## 🚀 Deploy no Render
+## 🎯 Requisitos do Sistema
 
-### Configuração Automática
+- **Sistema Operacional**: Windows 10/11 ou Windows Server
+- **Node.js**: Versão 18.x (LTS)
+- **NGINX**: Versão mais recente para Windows
+- **Privilégios**: Acesso de Administrador
+- **Portas**: 80 (NGINX), 3000 (Backend)
 
-1. **Conecte seu repositório** ao Render
-2. **Configure as variáveis de ambiente**:
-   ```
-   NODE_ENV=production
-   PORT=10000 (automaticamente definido pelo Render)
-   ```
+## 📁 Estrutura do Projeto
 
-3. **Configurações de Build**:
-   - **Build Command**: `npm ci && npm run build`
-   - **Start Command**: `npm start`
-   - **Node Version**: 18.19.0
+```
+playwright-automation-platform/
+├── backend/                 # Servidor Node.js (Express)
+│   ├── package.json
+│   ├── server.js
+│   └── routes/
+├── frontend/               # Aplicação React/SPA
+│   ├── package.json
+│   ├── src/
+│   └── dist/              # Build de produção
+├── config/
+│   ├── nginx.conf         # Configuração NGINX
+│   ├── pm2.config.js      # Gerenciamento de processos
+│   └── windows.conf       # Configurações específicas Windows
+├── scripts/
+│   ├── install.bat        # Script de instalação
+│   ├── start.bat          # Script de inicialização
+│   ├── stop.bat           # Script para parar serviços
+│   └── restart.bat        # Script de reinicialização
+├── logs/                  # Diretório de logs
+└── README.md
+```
 
-### Configuração Manual
+## 🚀 Instalação Rápida
 
-Se preferir configurar manualmente:
+### 1. Pré-requisitos
 
+**Instalar Node.js v18:**
 ```bash
-# 1. Clone o repositório
-git clone <seu-repositorio>
+# Baixar de: https://nodejs.org/en/download/
+# Verificar instalação:
+node -v
+npm -v
+```
+
+**Instalar NGINX para Windows:**
+```bash
+# Baixar de: http://nginx.org/en/download.html
+# Extrair para: C:\nginx
+```
+
+### 2. Configuração Automática
+
+Execute como **Administrador**:
+```batch
+# Clone o projeto
+git clone <repositorio>
 cd playwright-automation-platform
 
-# 2. Instale as dependências
+# Execute o script de instalação
+scripts\install.bat
+```
+
+### 3. Inicialização
+
+```batch
+# Iniciar todos os serviços
+scripts\start.bat
+
+# Ou individualmente:
+scripts\start-backend.bat
+scripts\start-nginx.bat
+```
+
+## 🔧 Configuração Manual
+
+### Backend (Node.js + Express)
+
+O backend já está configurado e rodando na porta 3000. Para verificar:
+
+```bash
+cd backend
 npm install
-
-# 3. Build para produção
-npm run build
-
-# 4. Inicie o servidor
 npm start
 ```
 
+### Frontend (React Build)
+
+O frontend já foi buildado e está na pasta `dist/`. Para rebuildar:
+
+```bash
+npm run build
+```
+
+### NGINX como Proxy Reverso
+
+1. **Copiar configuração:**
+```batch
+copy config\nginx.conf C:\nginx\conf\nginx.conf
+```
+
+2. **Iniciar NGINX:**
+```batch
+cd C:\nginx
+start nginx
+```
+
+3. **Verificar status:**
+```batch
+tasklist /fi "imagename eq nginx.exe"
+```
+
+## 🌐 Acesso ao Sistema
+
 ### URLs de Acesso
 
-- **Produção**: https://criptobalancer.onrender.com
-- **Health Check**: https://criptobalancer.onrender.com/health
-- **Dashboard**: https://criptobalancer.onrender.com/dashboard
+- **Local**: http://localhost ou http://127.0.0.1
+- **Rede Local**: http://SEU_IP_LOCAL
+- **Rede Externa**: http://SEU_IP_EXTERNO
 
-## 🛠️ Tecnologias
+### Verificação de Conectividade
 
-- **Frontend**: React 18 + TypeScript + Vite
-- **Styling**: Tailwind CSS + Framer Motion
-- **Icons**: Lucide React
-- **Charts**: Recharts
-- **Server**: Express.js
-- **Deploy**: Render
+```batch
+# Verificar portas abertas
+netstat -an | findstr :80
+netstat -an | findstr :3000
 
-## 📋 Funcionalidades
-
-### Dashboard Principal
-- Estatísticas em tempo real
-- Gráficos de execução
-- Métricas de performance
-- Execuções recentes
-
-### Gerenciamento de Scripts
-- Editor de código integrado
-- Sistema de tags
-- Controle de versão
-- Parâmetros dinâmicos
-
-### Monitoramento
-- Logs em tempo real
-- Status de execução
-- Histórico completo
-- Alertas e notificações
-
-### Configuração
-- Painel de administração
-- Configurações de segurança
-- Gerenciamento de usuários
-- Configurações do Playwright
-
-## 🔐 Autenticação
-
-Credenciais padrão para desenvolvimento:
-- **Usuário**: admin
-- **Senha**: admin
-
-## 🎨 Design System
-
-### Cores
-- **Primário**: Azul (#3B82F6)
-- **Secundário**: Roxo (#8B5CF6)
-- **Accent**: Verde (#10B981)
-- **Sucesso**: Verde (#22C55E)
-- **Aviso**: Amarelo (#F59E0B)
-- **Erro**: Vermelho (#EF4444)
-
-### Tipografia
-- **Principal**: Inter
-- **Código**: Fira Code
-
-### Responsividade
-- **Mobile**: < 768px
-- **Tablet**: 768px - 1024px
-- **Desktop**: > 1024px
-
-## 📊 Monitoramento
-
-### Health Check
-O endpoint `/health` retorna:
-```json
-{
-  "status": "OK",
-  "timestamp": "2024-01-25T10:00:00.000Z",
-  "environment": "production"
-}
+# Testar conectividade
+curl http://localhost
+curl http://localhost/api/health
 ```
 
-### Logs
-- Logs estruturados com níveis (info, warn, error, debug)
-- Timestamps em ISO 8601
-- Contexto de execução
-- Rastreamento de erros
+## 🛠️ Gerenciamento de Serviços
 
-## 🔧 Configuração Avançada
+### PM2 (Gerenciador de Processos)
 
-### Variáveis de Ambiente
-```env
-NODE_ENV=production
-PORT=10000
-LOG_LEVEL=info
-MAX_CONCURRENT_EXECUTIONS=5
-SESSION_TIMEOUT=3600
-```
-
-### Docker
 ```bash
-# Build da imagem
-docker build -t playwright-platform .
+# Instalar PM2 globalmente
+npm install -g pm2
 
-# Executar container
-docker run -p 3000:3000 playwright-platform
+# Iniciar aplicação
+pm2 start config\pm2.config.js
+
+# Monitorar
+pm2 monit
+
+# Logs
+pm2 logs
+
+# Reiniciar
+pm2 restart all
+
+# Parar
+pm2 stop all
 ```
 
-## 📈 Performance
+### NGINX
 
-- **Build otimizado** com code splitting
-- **Lazy loading** de componentes
-- **Caching** de assets estáticos
-- **Compressão** gzip/brotli
-- **Minificação** de CSS/JS
+```batch
+# Iniciar
+cd C:\nginx && start nginx
 
-## 🛡️ Segurança
+# Recarregar configuração
+nginx -s reload
 
-- Autenticação baseada em sessão
-- Validação de entrada
-- Rate limiting
-- Headers de segurança
-- Logs de auditoria
+# Parar
+nginx -s quit
 
-## 📞 Suporte
+# Verificar configuração
+nginx -t
+```
 
-Para suporte técnico ou dúvidas:
-- Documentação: [Link para docs]
-- Issues: [Link para GitHub Issues]
-- Email: suporte@playwright-platform.com
+## 🔒 Configuração de Firewall
+
+### Windows Firewall
+
+```batch
+# Permitir porta 80 (HTTP)
+netsh advfirewall firewall add rule name="HTTP Port 80" dir=in action=allow protocol=TCP localport=80
+
+# Permitir porta 3000 (Backend)
+netsh advfirewall firewall add rule name="Node.js Port 3000" dir=in action=allow protocol=TCP localport=3000
+
+# Verificar regras
+netsh advfirewall firewall show rule name="HTTP Port 80"
+```
+
+## 📊 Monitoramento e Logs
+
+### Localização dos Logs
+
+- **Backend**: `logs/backend.log`
+- **NGINX**: `C:\nginx\logs\access.log` e `C:\nginx\logs\error.log`
+- **PM2**: `%USERPROFILE%\.pm2\logs\`
+
+### Comandos de Monitoramento
+
+```batch
+# Verificar processos
+tasklist | findstr node
+tasklist | findstr nginx
+
+# Monitorar logs em tempo real
+tail -f logs\backend.log
+tail -f C:\nginx\logs\access.log
+```
+
+## 🚨 Solução de Problemas
+
+### Problemas Comuns
+
+**1. Porta 80 já em uso:**
+```batch
+# Verificar processo usando porta 80
+netstat -ano | findstr :80
+# Parar IIS se necessário
+iisreset /stop
+```
+
+**2. Node.js não encontrado:**
+```batch
+# Verificar PATH
+echo %PATH%
+# Reinstalar Node.js se necessário
+```
+
+**3. NGINX não inicia:**
+```batch
+# Verificar configuração
+cd C:\nginx
+nginx -t
+# Verificar logs de erro
+type logs\error.log
+```
+
+### Comandos de Diagnóstico
+
+```batch
+# Status geral do sistema
+scripts\status.bat
+
+# Teste de conectividade
+scripts\test-connectivity.bat
+
+# Limpeza de logs
+scripts\clean-logs.bat
+```
+
+## 🔄 Atualizações e Manutenção
+
+### Atualização da Aplicação
+
+```batch
+# Parar serviços
+scripts\stop.bat
+
+# Atualizar código
+git pull origin main
+
+# Rebuildar frontend
+npm run build
+
+# Reiniciar serviços
+scripts\start.bat
+```
+
+### Backup
+
+```batch
+# Backup automático
+scripts\backup.bat
+
+# Restaurar backup
+scripts\restore.bat YYYY-MM-DD
+```
+
+## 📞 Suporte e Documentação
+
+### URLs Importantes
+
+- **Dashboard**: http://localhost/dashboard
+- **API Health**: http://localhost/api/health
+- **Documentação API**: http://localhost/api/docs
+- **Logs Web**: http://localhost/logs
+
+### Contatos
+
+- **Suporte Técnico**: suporte@playwright-platform.com
+- **Documentação**: https://docs.playwright-platform.com
+- **Issues**: https://github.com/projeto/issues
 
 ---
 
-**Desenvolvido com ❤️ para automação moderna**
+**Desenvolvido para ambiente Windows de produção** 🚀
