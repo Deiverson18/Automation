@@ -103,7 +103,14 @@ IF NOT EXIST "%NGINX_PATH%\nginx.exe" (
     SET "DIST_PATH=%PROJECT_ROOT%\dist"
     SET "DIST_PATH=%DIST_PATH:\=/%"
     
+    ECHO [INFO] Caminho do frontend: %DIST_PATH%
+    
     powershell -Command "(Get-Content 'config\nginx.conf') -replace '__PROJECT_ROOT_DIST__', '%DIST_PATH%' | Set-Content 'temp\nginx.conf'"
+    
+    ECHO [INFO] Conteudo da configuracao gerada:
+    ECHO ----------------------------------------
+    type temp\nginx.conf | findstr "root"
+    ECHO ----------------------------------------
     
     REM Copiar nova configuracao
     copy "temp\nginx.conf" "%NGINX_PATH%\conf\nginx.conf" >nul 2>&1
@@ -115,7 +122,30 @@ IF NOT EXIST "%NGINX_PATH%\nginx.exe" (
         nginx -t >nul 2>&1
         IF %ERRORLEVEL% EQU 0 (
             ECHO [OK] Configuracao NGINX valida
-            SET NGINX_OK=true
+            
+            REM Parar NGINX se estiver rodando
+            tasklist /fi "imagename eq nginx.exe" | findstr nginx >nul
+            IF %ERRORLEVEL% EQU 0 (
+                ECHO [INFO] Parando NGINX existente...
+                nginx -s quit >nul 2>&1
+                timeout /t 2 /nobreak >nul
+            )
+            
+            REM Recarregar configuracao
+            ECHO [INFO] Recarregando configuracao NGINX...
+            start "" nginx.exe
+            timeout /t 2 /nobreak >nul
+            
+            REM Verificar se NGINX iniciou
+            tasklist /fi "imagename eq nginx.exe" | findstr nginx >nul
+            IF %ERRORLEVEL% EQU 0 (
+                ECHO [OK] NGINX iniciado com nova configuracao
+                SET NGINX_OK=true
+            ) ELSE (
+                ECHO [ERRO] Falha ao iniciar NGINX
+                SET NGINX_OK=false
+            )
+            
         ) ELSE (
             ECHO [ERRO] Configuracao NGINX invalida
             SET NGINX_OK=false
@@ -154,6 +184,15 @@ ECHO.
 IF "%NGINX_OK%"=="true" (
     ECHO [INFO] Sistema configurado com NGINX
     ECHO Acesse: http://localhost
+    ECHO.
+    ECHO [INFO] Testando conectividade...
+    timeout /t 3 /nobreak >nul
+    curl -s http://localhost >nul 2>&1
+    IF %ERRORLEVEL% EQU 0 (
+        ECHO [OK] Frontend acessivel via NGINX
+    ) ELSE (
+        ECHO [AVISO] Frontend pode nao estar acessivel ainda
+    )
 ) ELSE (
     ECHO [INFO] Sistema configurado sem NGINX
     ECHO Acesse: http://localhost:3000
@@ -163,6 +202,7 @@ ECHO.
 ECHO Proximos passos:
 ECHO 1. Execute: scripts\start.bat
 ECHO 2. Verifique: scripts\status.bat
+ECHO 3. Logs: scripts\logs.bat
 ECHO.
 
 PAUSE
