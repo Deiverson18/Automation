@@ -1,235 +1,168 @@
 @echo off
-TITLE Instalacao do Sistema Playwright Hub
+TITLE Instalacao Playwright Hub
 COLOR 0A
-SETLOCAL EnableDelayedExpansion
 
-REM --- Log Configuration ---
-SET "LOG_DIR=%~dp0logs"
-FOR /F "tokens=1-4 delims=/ " %%a IN ('date /t') DO (SET "CURRENT_DATE=%%c%%b%%a")
-FOR /F "tokens=1-3 delims=:." %%a IN ('time /t') DO (SET "CURRENT_TIME=%%a%%b%%c")
-SET "LOG_FILE=!LOG_DIR!\install_log_!CURRENT_DATE!_!CURRENT_TIME!.log"
+ECHO ========================================
+ECHO   PLAYWRIGHT HUB - INSTALACAO
+ECHO ========================================
+ECHO.
 
-REM Create log directory if it doesn't exist
-IF NOT EXIST "!LOG_DIR!" mkdir "!LOG_DIR!"
-
-REM Function to log messages
-:_log
-ECHO [%DATE% %TIME%] [INFO] %*
-ECHO [%DATE% %TIME%] [INFO] %* >> "!LOG_FILE!"
-GOTO :EOF
-
-REM Function to log errors
-:_log_error
-ECHO [%DATE% %TIME%] [ERRO] %*
-ECHO [%DATE% %TIME%] [ERRO] %* >> "!LOG_FILE!"
-GOTO :EOF
-
-REM --- Script Start ---
-CALL :_log "========================================"
-CALL :_log "   PLAYWRIGHT HUB - INICIO DA INSTALACAO"
-CALL :_log "========================================"
-CALL :_log ""
-
-REM Check for Administrator privileges
-CALL :_log "Verificando privilegios de Administrador..."
+REM Verificar privilegios de administrador
 net session >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
-    CALL :_log_error "Este script deve ser executado como Administrador!"
-    CALL :_log_error "Clique com botao direito e selecione 'Executar como administrador'"
+    ECHO [ERRO] Execute como Administrador!
+    ECHO Clique com botao direito e selecione "Executar como administrador"
     PAUSE
     EXIT /B 1
 )
-CALL :_log "Privilegios de Administrador OK."
-CALL :_log ""
 
-REM --- Prerequisites Check ---
-CALL :_log "Verificando prerequisitos..."
-CALL :_log ""
+ECHO [OK] Privilegios de administrador verificados
+ECHO.
 
-REM Check Node.js
-CALL :_log "Verificando Node.js..."
+REM Verificar Node.js
+ECHO [CHECK] Verificando Node.js...
 node -v >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
-    CALL :_log_error "Node.js nao encontrado!"
-    CALL :_log_error "Por favor, instale Node.js v18 de: https://nodejs.org"
-    GOTO ERROR
-) ELSE (
-    FOR /F "tokens=*" %%i IN ('node -v') DO SET NODE_VERSION=%%i
-    CALL :_log "Node.js encontrado: !NODE_VERSION!"
+    ECHO [ERRO] Node.js nao encontrado!
+    ECHO Baixe e instale Node.js v18 de: https://nodejs.org
+    PAUSE
+    EXIT /B 1
 )
+FOR /F "tokens=*" %%i IN ('node -v') DO ECHO [OK] Node.js %%i encontrado
 
-REM Check NPM
-CALL :_log "Verificando NPM..."
+REM Verificar NPM
+ECHO [CHECK] Verificando NPM...
 npm -v >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
-    CALL :_log_error "NPM nao encontrado!"
-    GOTO ERROR
-) ELSE (
-    FOR /F "tokens=*" %%i IN ('npm -v') DO SET NPM_VERSION=%%i
-    CALL :_log "NPM encontrado: !NPM_VERSION!"
+    ECHO [ERRO] NPM nao encontrado!
+    PAUSE
+    EXIT /B 1
 )
-CALL :_log ""
+FOR /F "tokens=*" %%i IN ('npm -v') DO ECHO [OK] NPM %%i encontrado
+ECHO.
 
-REM --- Installation Steps ---
-CALL :_log "Iniciando instalacao..."
-CALL :_log ""
-
-REM Create necessary directories
-CALL :_log "Criando estrutura de diretorios..."
+REM Criar diretorios necessarios
+ECHO [STEP] Criando diretorios...
 IF NOT EXIST "logs" mkdir logs
 IF NOT EXIST "temp" mkdir temp
 IF NOT EXIST "backup" mkdir backup
-CALL :_log "Diretorios 'logs', 'temp', 'backup' criados/verificados."
+ECHO [OK] Diretorios criados
 
-REM Install backend dependencies
-CALL :_log "Instalando dependencias do backend..."
+REM Instalar dependencias do backend
+ECHO [STEP] Instalando dependencias do backend...
 cd backend
-call npm install --production
+call npm install --silent
 IF %ERRORLEVEL% NEQ 0 (
-    CALL :_log_error "Falha ao instalar dependencias do backend!"
+    ECHO [ERRO] Falha ao instalar dependencias do backend!
     cd ..
-    GOTO ERROR
+    PAUSE
+    EXIT /B 1
 )
 cd ..
-CALL :_log "Dependencias do backend instaladas com sucesso."
+ECHO [OK] Dependencias do backend instaladas
 
-REM Verify frontend build
-CALL :_log "Verificando build do frontend..."
+REM Verificar build do frontend
+ECHO [STEP] Verificando build do frontend...
 IF NOT EXIST "dist" (
-    CALL :_log_error "Build do frontend nao encontrado!"
-    CALL :_log_error "Execute 'npm run build' primeiro."
-    GOTO ERROR
+    ECHO [ERRO] Build do frontend nao encontrado!
+    ECHO Execute 'npm run build' primeiro
+    PAUSE
+    EXIT /B 1
 )
-CALL :_log "Build do frontend encontrado."
+ECHO [OK] Build do frontend encontrado
 
-REM Install PM2 globally
-CALL :_log "Instalando PM2 globalmente..."
-call npm install -g pm2
+REM Instalar PM2
+ECHO [STEP] Instalando PM2...
+call npm install -g pm2 --silent
 IF %ERRORLEVEL% NEQ 0 (
-    CALL :_log_error "Falha ao instalar PM2. Continuando sem PM2."
+    ECHO [AVISO] Falha ao instalar PM2, continuando...
 ) ELSE (
-    CALL :_log "PM2 instalado com sucesso."
+    ECHO [OK] PM2 instalado
 )
 
-REM --- NGINX Configuration ---
-CALL :_log "Configurando NGINX..."
+REM Configurar NGINX
+ECHO [STEP] Configurando NGINX...
 SET "NGINX_PATH=C:\nginx"
-SET "NGINX_EXE=!NGINX_PATH!\nginx.exe"
-SET "NGINX_CONF_DIR=!NGINX_PATH!\conf"
-SET "NGINX_CONF_FILE=!NGINX_CONF_DIR!\nginx.conf"
 SET "PROJECT_ROOT=%~dp0.."
-SET "FRONTEND_DIST_PATH=!PROJECT_ROOT!\dist"
 
-IF NOT EXIST "!NGINX_EXE!" (
-    CALL :_log_error "NGINX nao encontrado em !NGINX_PATH!\"
-    CALL :_log_error "Por favor, baixe e extraia NGINX de: http://nginx.org/en/download.html"
-    CALL :_log_error "Extraia para: !NGINX_PATH!\"
-    CALL :_log_error "Continuando sem configurar NGINX."
-    SET NGINX_CONFIGURED=false
+IF NOT EXIST "%NGINX_PATH%\nginx.exe" (
+    ECHO [AVISO] NGINX nao encontrado em %NGINX_PATH%
+    ECHO Baixe NGINX de: http://nginx.org/en/download.html
+    ECHO Extraia para: %NGINX_PATH%
+    ECHO Sistema funcionara apenas na porta 3000
+    SET NGINX_OK=false
 ) ELSE (
-    CALL :_log "NGINX encontrado em !NGINX_PATH!."
-    SET NGINX_CONFIGURED=true
+    ECHO [OK] NGINX encontrado
 
-    REM Backup original NGINX config
-    IF EXIST "!NGINX_CONF_FILE!" (
-        copy "!NGINX_CONF_FILE!" "!NGINX_CONF_FILE!.backup" >nul
-        CALL :_log "Backup da configuracao NGINX original criado: !NGINX_CONF_FILE!.backup"
+    REM Backup da configuracao original
+    IF EXIST "%NGINX_PATH%\conf\nginx.conf" (
+        copy "%NGINX_PATH%\conf\nginx.conf" "%NGINX_PATH%\conf\nginx.conf.backup" >nul 2>&1
     )
+
+    REM Criar configuracao personalizada
+    SET "DIST_PATH=%PROJECT_ROOT%\dist"
+    SET "DIST_PATH=%DIST_PATH:\=/%"
     
-    REM Create temporary NGINX config with dynamic path
-    SET "TEMP_NGINX_CONF=!LOG_DIR!\temp_nginx.conf"
-    CALL :_log "Gerando configuracao NGINX temporaria com caminho dinamico..."
-    (
-        FOR /F "usebackq delims=" %%L IN ("config\nginx.conf") DO (
-            SET "LINE=%%L"
-            SETLOCAL EnableDelayedExpansion
-            SET "LINE=!LINE:__PROJECT_ROOT_DIST__=!FRONTEND_DIST_PATH!!"
-            ECHO !LINE!
-            ENDLOCAL
-        )
-    ) > "!TEMP_NGINX_CONF!"
+    powershell -Command "(Get-Content 'config\nginx.conf') -replace '__PROJECT_ROOT_DIST__', '%DIST_PATH%' | Set-Content 'temp\nginx.conf'"
     
-    REM Copy new NGINX config
-    copy "!TEMP_NGINX_CONF!" "!NGINX_CONF_FILE!" >nul
+    REM Copiar nova configuracao
+    copy "temp\nginx.conf" "%NGINX_PATH%\conf\nginx.conf" >nul 2>&1
     IF %ERRORLEVEL% EQU 0 (
-        CALL :_log "Configuracao NGINX atualizada com sucesso: !NGINX_CONF_FILE!"
-    ) ELSE (
-        CALL :_log_error "Falha ao copiar configuracao NGINX para !NGINX_CONF_FILE!."
-        SET NGINX_CONFIGURED=false
-    )
-    del "!TEMP_NGINX_CONF!" >nul 2>&1
-
-    IF "!NGINX_CONFIGURED!"=="true" (
-        REM Test NGINX configuration
-        CALL :_log "Testando configuracao NGINX..."
-        cd "!NGINX_PATH!"
-        nginx -t 2> "!LOG_DIR!\nginx_test_output.log"
+        ECHO [OK] Configuracao NGINX atualizada
+        
+        REM Testar configuracao
+        cd "%NGINX_PATH%"
+        nginx -t >nul 2>&1
         IF %ERRORLEVEL% EQU 0 (
-            CALL :_log "Teste de configuracao NGINX: SUCESSO."
+            ECHO [OK] Configuracao NGINX valida
+            SET NGINX_OK=true
         ) ELSE (
-            CALL :_log_error "Teste de configuracao NGINX: FALHA. Verifique !LOG_DIR!\nginx_test_output.log para detalhes."
-            SET NGINX_CONFIGURED=false
+            ECHO [ERRO] Configuracao NGINX invalida
+            SET NGINX_OK=false
         )
-        cd "!PROJECT_ROOT!"
+        cd "%PROJECT_ROOT%"
+    ) ELSE (
+        ECHO [ERRO] Falha ao copiar configuracao NGINX
+        SET NGINX_OK=false
     )
+    
+    del "temp\nginx.conf" >nul 2>&1
 )
-CALL :_log ""
 
-REM Configure firewall
-CALL :_log "Configurando firewall..."
+REM Configurar firewall
+ECHO [STEP] Configurando firewall...
 netsh advfirewall firewall add rule name="Playwright Hub HTTP" dir=in action=allow protocol=TCP localport=80 >nul 2>&1
 netsh advfirewall firewall add rule name="Playwright Hub Backend" dir=in action=allow protocol=TCP localport=3000 >nul 2>&1
-CALL :_log "Regras de firewall configuradas para portas 80 e 3000."
-CALL :_log ""
+ECHO [OK] Firewall configurado
 
-REM Create local configuration file (.env)
-CALL :_log "Criando arquivo de configuracao local (.env)..."
+REM Criar arquivo .env
+ECHO [STEP] Criando configuracao local...
 (
-ECHO # Configuracao Local - Playwright Hub
 ECHO NODE_ENV=production
 ECHO PORT=3000
 ECHO LOG_LEVEL=info
 ECHO LOG_FILE=logs\backend.log
 ) > .env
-CALL :_log "Arquivo .env criado com sucesso."
-CALL :_log ""
+ECHO [OK] Arquivo .env criado
 
-REM --- Finalization ---
-CALL :_log "========================================"
-CALL :_log "        INSTALACAO CONCLUIDA!"
-CALL :_log "========================================"
-CALL :_log ""
+ECHO.
+ECHO ========================================
+ECHO      INSTALACAO CONCLUIDA!
+ECHO ========================================
+ECHO.
 
-CALL :_log "Proximos passos:"
-CALL :_log "1. Execute: scripts\start.bat"
-CALL :_log "2. Acesse: http://localhost"
-CALL :_log "3. API: http://localhost/api/health"
-CALL :_log ""
-CALL :_log "Para iniciar automaticamente:"
-CALL :_log "- Backend: scripts\start-backend.bat"
-CALL :_log "- NGINX: scripts\start-nginx.bat"
-CALL :_log ""
-
-REM Connectivity Test
-CALL :_log "Realizando teste de conectividade (http://localhost)..."
-curl -s http://localhost >nul 2>&1
-IF %ERRORLEVEL% EQU 0 (
-    CALL :_log "Teste de conectividade: SUCESSO. O frontend esta acessivel."
+IF "%NGINX_OK%"=="true" (
+    ECHO [INFO] Sistema configurado com NGINX
+    ECHO Acesse: http://localhost
 ) ELSE (
-    CALL :_log_error "Teste de conectividade: FALHA. O frontend pode nao estar acessivel. Verifique o NGINX e o backend."
+    ECHO [INFO] Sistema configurado sem NGINX
+    ECHO Acesse: http://localhost:3000
 )
-CALL :_log ""
 
-GOTO END
+ECHO.
+ECHO Proximos passos:
+ECHO 1. Execute: scripts\start.bat
+ECHO 2. Verifique: scripts\status.bat
+ECHO.
 
-:ERROR
-CALL :_log_error "========================================"
-CALL :_log_error "        INSTALACAO FALHOU!"
-CALL :_log_error "========================================"
-CALL :_log_error "Verifique as mensagens de erro acima e o arquivo de log: !LOG_FILE!"
-CALL :_log_error ""
-EXIT /B 1
-
-:END
-CALL :_log "Pressione qualquer tecla para sair..."
-PAUSE >nul
+PAUSE
