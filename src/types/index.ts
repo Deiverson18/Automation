@@ -3,11 +3,20 @@ export interface Script {
   name: string;
   description: string;
   code: string;
-  parameters: Record<string, any>;
+  parameters: ScriptParameter[];
   createdAt: string;
   updatedAt: string;
   tags: string[];
   status: 'draft' | 'active' | 'disabled';
+}
+
+export interface ScriptParameter {
+  id: string;
+  key: string;
+  value: string | number | boolean;
+  type: 'string' | 'number' | 'boolean';
+  description?: string;
+  required?: boolean;
 }
 
 export interface ScriptInput {
@@ -16,7 +25,7 @@ export interface ScriptInput {
   code: string;
   tags: string[];
   status: 'draft' | 'active' | 'disabled';
-  parameters: Record<string, any>;
+  parameters: ScriptParameter[];
 }
 export interface Execution {
   id: string;
