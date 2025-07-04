@@ -1,86 +1,11 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
+const DatabaseManager = require('../database/DatabaseManager');
 const router = express.Router();
 
-// Mock data para demonstração
-const mockScripts = [
-  {
-    id: '1',
-    name: 'Login Test',
-    description: 'Teste automatizado de login',
-    status: 'active',
-    lastRun: new Date().toISOString(),
-    executions: 45,
-    code: `// Teste de login automatizado
-await page.goto('https://example.com/login');
-console.log('[PLAYWRIGHT] Navegando para página de login');
-
-await page.fill('#username', 'testuser');
-console.log('[PLAYWRIGHT] Preenchendo campo de usuário');
-
-await page.fill('#password', 'testpass');
-console.log('[PLAYWRIGHT] Preenchendo campo de senha');
-
-await page.click('button[type="submit"]');
-console.log('[PLAYWRIGHT] Clicando no botão de login');
-
-await page.waitForSelector('.dashboard', { timeout: 5000 });
-console.log('[PLAYWRIGHT] Login realizado com sucesso');
-
-// Capturar screenshot
-await page.screenshot({ path: 'login-success.png' });
-console.log('[PLAYWRIGHT] Screenshot capturado');`
-  },
-  {
-    id: '2',
-    name: 'E-commerce Checkout',
-    description: 'Automação do processo de checkout',
-    status: 'active',
-    lastRun: new Date().toISOString(),
-    executions: 32,
-    code: `// Automação de checkout e-commerce
-await page.goto('https://demo-store.com/product/123');
-console.log('[PLAYWRIGHT] Navegando para página do produto');
-
-await page.click('.add-to-cart');
-console.log('[PLAYWRIGHT] Adicionando produto ao carrinho');
-
-await page.waitForSelector('.cart-notification');
-console.log('[PLAYWRIGHT] Produto adicionado com sucesso');
-
-await page.click('.checkout-btn');
-console.log('[PLAYWRIGHT] Iniciando processo de checkout');
-
-await page.fill('#email', 'test@example.com');
-await page.fill('#first-name', 'João');
-await page.fill('#last-name', 'Silva');
-console.log('[PLAYWRIGHT] Preenchendo dados do cliente');
-
-await page.screenshot({ path: 'checkout-form.png' });
-console.log('[PLAYWRIGHT] Checkout concluído com sucesso');`
-  }
-];
-
-const mockExecutions = [
-  {
-    id: '1',
-    scriptId: '1',
-    scriptName: 'Login Test',
-    status: 'completed',
-    startTime: new Date().toISOString(),
-    duration: 15000,
-    success: true
-  },
-  {
-    id: '2',
-    scriptId: '2',
-    scriptName: 'E-commerce Checkout',
-    status: 'running',
-    startTime: new Date().toISOString(),
-    success: null
-  }
-];
+// Inicializar gerenciador de banco de dados
+const dbManager = new DatabaseManager();
 
 // Middleware de validação
 const handleValidationErrors = (req, res, next) => {
@@ -94,7 +19,29 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-// Rotas de autenticação
+// Middleware para conectar ao banco se necessário
+const ensureDbConnection = async (req, res, next) => {
+  try {
+    // Verificar se a conexão está ativa
+    const health = await dbManager.healthCheck();
+    if (health.status !== 'healthy') {
+      await dbManager.connect();
+    }
+    next();
+  } catch (error) {
+    console.error('Erro na conexão com banco de dados:', error);
+    res.status(500).json({
+      error: 'Erro de conexão com banco de dados',
+      message: 'Tente novamente em alguns instantes'
+    });
+  }
+};
+
+// Aplicar middleware de conexão a todas as rotas
+router.use(ensureDbConnection);
+
+// === ROTAS DE AUTENTICAÇÃO ===
+
 router.post('/auth/login', [
   body('username').notEmpty().withMessage('Username é obrigatório'),
   body('password').notEmpty().withMessage('Password é obrigatório')
@@ -120,169 +67,333 @@ router.post('/auth/login', [
   }
 });
 
-// Rotas de scripts
-router.get('/scripts', (req, res) => {
-  res.json({
-    success: true,
-    data: mockScripts,
-    total: mockScripts.length
-  });
-});
+// === ROTAS DE SCRIPTS ===
 
-router.get('/scripts/:id', (req, res) => {
-  const script = mockScripts.find(s => s.id === req.params.id);
-  if (!script) {
-    return res.status(404).json({
-      error: 'Script não encontrado'
+// Listar scripts com paginação e filtros
+router.get('/scripts', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      search,
+      tags,
+      sortBy = 'updatedAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const options = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      status,
+      search,
+      tags: tags ? tags.split(',') : undefined,
+      sortBy,
+      sortOrder
+    };
+
+    const result = await dbManager.getScripts(options);
+    
+    res.json({
+      success: true,
+      data: result.scripts,
+      pagination: result.pagination,
+      total: result.pagination.total
+    });
+  } catch (error) {
+    console.error('Erro ao listar scripts:', error);
+    res.status(500).json({
+      error: 'Erro ao buscar scripts',
+      message: error.message
     });
   }
-  res.json({
-    success: true,
-    data: script
-  });
 });
 
+// Buscar script por ID
+router.get('/scripts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const script = await dbManager.getScriptById(id);
+    
+    if (!script) {
+      return res.status(404).json({
+        error: 'Script não encontrado'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: script
+    });
+  } catch (error) {
+    console.error('Erro ao buscar script:', error);
+    res.status(500).json({
+      error: 'Erro ao buscar script',
+      message: error.message
+    });
+  }
+});
+
+// Criar novo script
 router.post('/scripts', [
   body('name').notEmpty().withMessage('Nome é obrigatório'),
   body('description').optional(),
-  body('code').notEmpty().withMessage('Código é obrigatório')
-], handleValidationErrors, (req, res) => {
-  const newScript = {
-    id: Date.now().toString(),
-    ...req.body,
-    status: 'draft',
-    createdAt: new Date().toISOString(),
-    executions: 0
-  };
-  
-  mockScripts.push(newScript);
-  
-  res.status(201).json({
-    success: true,
-    data: newScript
-  });
+  body('code').notEmpty().withMessage('Código é obrigatório'),
+  body('tags').optional().isArray().withMessage('Tags devem ser um array'),
+  body('parameters').optional().isObject().withMessage('Parâmetros devem ser um objeto'),
+  body('status').optional().isIn(['draft', 'active', 'disabled']).withMessage('Status inválido')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const scriptData = {
+      name: req.body.name,
+      description: req.body.description,
+      code: req.body.code,
+      tags: req.body.tags || [],
+      parameters: req.body.parameters || {},
+      status: req.body.status || 'draft'
+    };
+    
+    const script = await dbManager.createScript(scriptData);
+    
+    res.status(201).json({
+      success: true,
+      data: script,
+      message: 'Script criado com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao criar script:', error);
+    res.status(500).json({
+      error: 'Erro ao criar script',
+      message: error.message
+    });
+  }
 });
 
 // Atualizar script existente
 router.put('/scripts/:id', [
-  body('name').notEmpty().withMessage('Nome é obrigatório'),
-  body('code').notEmpty().withMessage('Código é obrigatório'),
+  body('name').optional().notEmpty().withMessage('Nome não pode estar vazio'),
+  body('code').optional().notEmpty().withMessage('Código não pode estar vazio'),
   body('description').optional().isString().withMessage('Descrição deve ser uma string'),
   body('tags').optional().isArray().withMessage('Tags devem ser um array'),
   body('tags.*').optional().isString().withMessage('Cada tag deve ser uma string'),
+  body('parameters').optional().isObject().withMessage('Parâmetros devem ser um objeto'),
   body('status').optional().isIn(['draft', 'active', 'disabled']).withMessage('Status deve ser: draft, active ou disabled')
-], handleValidationErrors, (req, res) => {
-  const { id } = req.params;
-  const { name, code, description, tags, status } = req.body;
-  
+], handleValidationErrors, async (req, res) => {
   try {
-    // Buscar script existente
-    const scriptIndex = mockScripts.findIndex(script => script.id === id);
+    const { id } = req.params;
+    const updateData = {};
     
-    if (scriptIndex === -1) {
+    // Apenas incluir campos que foram fornecidos
+    if (req.body.name !== undefined) updateData.name = req.body.name;
+    if (req.body.code !== undefined) updateData.code = req.body.code;
+    if (req.body.description !== undefined) updateData.description = req.body.description;
+    if (req.body.tags !== undefined) updateData.tags = req.body.tags;
+    if (req.body.parameters !== undefined) updateData.parameters = req.body.parameters;
+    if (req.body.status !== undefined) updateData.status = req.body.status;
+    
+    const script = await dbManager.updateScript(id, updateData);
+    
+    res.json({
+      success: true,
+      data: script,
+      message: 'Script atualizado com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar script:', error);
+    
+    if (error.message.includes('não encontrado')) {
       return res.status(404).json({
         error: 'Script não encontrado',
-        message: `Script com ID ${id} não existe`
+        message: `Script com ID ${req.params.id} não existe`
       });
     }
     
-    const existingScript = mockScripts[scriptIndex];
+    res.status(500).json({
+      error: 'Erro ao atualizar script',
+      message: error.message
+    });
+  }
+});
+
+// Deletar script
+router.delete('/scripts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await dbManager.deleteScript(id);
     
-    // Validações adicionais de segurança
-    if (name && name.trim().length === 0) {
-      return res.status(400).json({
-        error: 'Nome inválido',
-        message: 'Nome não pode estar vazio'
+    res.json({
+      success: true,
+      message: 'Script deletado com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao deletar script:', error);
+    
+    if (error.message.includes('não encontrado')) {
+      return res.status(404).json({
+        error: 'Script não encontrado'
       });
     }
     
-    if (code && code.trim().length === 0) {
-      return res.status(400).json({
-        error: 'Código inválido',
-        message: 'Código não pode estar vazio'
-      });
+    res.status(500).json({
+      error: 'Erro ao deletar script',
+      message: error.message
+    });
+  }
+});
+
+// === ROTAS DE EXECUÇÕES ===
+
+// Listar execuções
+router.get('/executions', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      scriptId,
+      sortBy = 'startTime',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const options = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      status,
+      scriptId,
+      sortBy,
+      sortOrder
+    };
+
+    // Incluir execuções do engine se disponível
+    let engineExecutions = [];
+    if (req.app.locals.executionEngine) {
+      engineExecutions = req.app.locals.executionEngine.getAllExecutions();
     }
+
+    const result = await dbManager.getExecutions(options);
     
-    // Validar tags se fornecidas
-    if (tags && Array.isArray(tags)) {
-      const invalidTags = tags.filter(tag => typeof tag !== 'string' || tag.trim().length === 0);
-      if (invalidTags.length > 0) {
-        return res.status(400).json({
-          error: 'Tags inválidas',
-          message: 'Todas as tags devem ser strings não vazias'
+    // Mesclar execuções do banco com execuções ativas do engine
+    const allExecutions = [...result.executions];
+    
+    // Adicionar execuções ativas que não estão no banco
+    for (const engineExec of engineExecutions) {
+      const existsInDb = allExecutions.find(dbExec => dbExec.id === engineExec.id);
+      if (!existsInDb) {
+        allExecutions.unshift({
+          id: engineExec.id,
+          scriptId: engineExec.scriptId || 'unknown',
+          scriptName: engineExec.scriptName || 'Script em execução',
+          status: engineExec.status,
+          startTime: engineExec.startTime.toISOString(),
+          endTime: engineExec.endTime ? engineExec.endTime.toISOString() : null,
+          duration: engineExec.duration,
+          progress: engineExec.progress || 0,
+          parameters: engineExec.parameters || {},
+          logs: engineExec.logs || [],
+          screenshots: engineExec.screenshots || [],
+          result: engineExec.result,
+          error: engineExec.error,
+          securityLevel: engineExec.security?.isolationLevel || 'HIGH'
         });
       }
     }
-    
-    // Preparar dados atualizados
-    const updatedScript = {
-      ...existingScript,
-      name: name || existingScript.name,
-      code: code || existingScript.code,
-      description: description !== undefined ? description : existingScript.description,
-      tags: tags !== undefined ? tags.map(tag => tag.trim()) : existingScript.tags,
-      status: status || existingScript.status,
-      updatedAt: new Date().toISOString()
-    };
-    
-    // Atualizar no array mock
-    mockScripts[scriptIndex] = updatedScript;
-    
-    // Log da operação para auditoria
-    console.log(`[API] Script ${id} atualizado por usuário`, {
-      scriptId: id,
-      scriptName: updatedScript.name,
-      timestamp: updatedScript.updatedAt,
-      changes: {
-        name: name !== existingScript.name,
-        code: code !== existingScript.code,
-        description: description !== existingScript.description,
-        tags: JSON.stringify(tags) !== JSON.stringify(existingScript.tags),
-        status: status !== existingScript.status
-      }
-    });
-    
-    res.status(200).json({
+
+    res.json({
       success: true,
-      data: updatedScript,
-      message: 'Script atualizado com sucesso'
+      data: allExecutions,
+      pagination: result.pagination,
+      total: allExecutions.length
     });
-    
   } catch (error) {
-    console.error(`Erro ao atualizar script ${id}:`, error);
+    console.error('Erro ao listar execuções:', error);
     res.status(500).json({
-      error: 'Erro interno do servidor',
-      message: 'Falha ao atualizar script',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: 'Erro ao buscar execuções',
+      message: error.message
     });
   }
 });
 
-// Rotas de execuções
-router.get('/executions', (req, res) => {
-  // Incluir execuções do engine se disponível
-  let allExecutions = [...mockExecutions];
-  
-  if (req.app.locals.executionEngine) {
-    const engineExecutions = req.app.locals.executionEngine.getAllExecutions();
-    allExecutions = [...allExecutions, ...engineExecutions];
+// Buscar execução por ID
+router.get('/executions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Primeiro tentar buscar no banco
+    let execution = await dbManager.getExecutionById(id);
+    
+    // Se não encontrar no banco, buscar no engine
+    if (!execution && req.app.locals.executionEngine) {
+      const engineExecution = req.app.locals.executionEngine.getExecution(id);
+      if (engineExecution) {
+        execution = {
+          id: engineExecution.id,
+          scriptId: engineExecution.scriptId || 'unknown',
+          scriptName: engineExecution.scriptName || 'Script em execução',
+          status: engineExecution.status,
+          startTime: engineExecution.startTime.toISOString(),
+          endTime: engineExecution.endTime ? engineExecution.endTime.toISOString() : null,
+          duration: engineExecution.duration,
+          progress: engineExecution.progress || 0,
+          parameters: engineExecution.parameters || {},
+          logs: engineExecution.logs || [],
+          screenshots: engineExecution.screenshots || [],
+          result: engineExecution.result,
+          error: engineExecution.error,
+          securityLevel: engineExecution.security?.isolationLevel || 'HIGH'
+        };
+      }
+    }
+    
+    if (!execution) {
+      return res.status(404).json({
+        error: 'Execução não encontrada'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: execution
+    });
+  } catch (error) {
+    console.error('Erro ao buscar execução:', error);
+    res.status(500).json({
+      error: 'Erro ao buscar execução',
+      message: error.message
+    });
   }
-
-  res.json({
-    success: true,
-    data: allExecutions,
-    total: allExecutions.length
-  });
 });
 
+// Criar nova execução
 router.post('/executions', [
   body('scriptId').notEmpty().withMessage('Script ID é obrigatório'),
-  body('code').notEmpty().withMessage('Código é obrigatório')
+  body('code').notEmpty().withMessage('Código é obrigatório'),
+  body('parameters').optional().isObject().withMessage('Parâmetros devem ser um objeto'),
+  body('config').optional().isObject().withMessage('Configuração deve ser um objeto')
 ], handleValidationErrors, async (req, res) => {
-  const { scriptId, code, parameters = {}, config = {} } = req.body;
-  
   try {
+    const { scriptId, code, parameters = {}, config = {} } = req.body;
     const executionId = uuidv4();
+    
+    // Buscar informações do script
+    const script = await dbManager.getScriptById(scriptId);
+    if (!script) {
+      return res.status(404).json({
+        error: 'Script não encontrado'
+      });
+    }
+    
+    // Criar registro de execução no banco
+    const executionData = {
+      id: executionId,
+      scriptId,
+      scriptName: script.name,
+      status: 'queued',
+      parameters,
+      config,
+      securityLevel: 'HIGH'
+    };
+    
+    await dbManager.createExecution(executionData);
     
     // Verificar se o execution engine está disponível
     if (!req.app.locals.executionEngine) {
@@ -293,8 +404,21 @@ router.post('/executions', [
 
     // Iniciar execução assíncrona
     req.app.locals.executionEngine.executeTest(code, executionId, config)
-      .catch(error => {
+      .then(async () => {
+        // Atualizar status no banco quando concluído
+        await dbManager.updateExecution(executionId, { 
+          status: 'completed',
+          endTime: new Date().toISOString()
+        });
+      })
+      .catch(async (error) => {
         console.error(`Erro na execução ${executionId}:`, error);
+        // Atualizar status no banco quando falhar
+        await dbManager.updateExecution(executionId, { 
+          status: 'failed',
+          error: error.message,
+          endTime: new Date().toISOString()
+        });
       });
 
     res.status(201).json({
@@ -302,11 +426,14 @@ router.post('/executions', [
       data: {
         id: executionId,
         scriptId,
-        status: 'running',
+        scriptName: script.name,
+        status: 'queued',
         startTime: new Date().toISOString(),
         parameters,
-        config
-      }
+        config,
+        securityLevel: 'HIGH'
+      },
+      message: 'Execução iniciada com sucesso'
     });
 
   } catch (error) {
@@ -319,77 +446,185 @@ router.post('/executions', [
 });
 
 // Cancelar execução
-router.post('/executions/:id/cancel', (req, res) => {
-  const { id } = req.params;
-  
-  if (!req.app.locals.executionEngine) {
-    return res.status(500).json({
-      error: 'Engine de execução não disponível'
-    });
-  }
-
-  const success = req.app.locals.executionEngine.cancelExecution(id);
-  
-  if (success) {
-    res.json({
-      success: true,
-      message: 'Execução cancelada com sucesso'
-    });
-  } else {
-    res.status(404).json({
-      error: 'Execução não encontrada ou não pode ser cancelada'
-    });
-  }
-});
-
-// Obter detalhes de uma execução
-router.get('/executions/:id', (req, res) => {
-  const { id } = req.params;
-  
-  if (!req.app.locals.executionEngine) {
-    return res.status(500).json({
-      error: 'Engine de execução não disponível'
-    });
-  }
-
-  const execution = req.app.locals.executionEngine.getExecution(id);
-  
-  if (execution) {
-    res.json({
-      success: true,
-      data: execution
-    });
-  } else {
-    res.status(404).json({
-      error: 'Execução não encontrada'
+router.post('/executions/:id/cancel', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    let success = false;
+    
+    // Tentar cancelar no engine
+    if (req.app.locals.executionEngine) {
+      success = req.app.locals.executionEngine.cancelExecution(id);
+    }
+    
+    // Atualizar status no banco
+    if (success) {
+      await dbManager.updateExecution(id, { 
+        status: 'cancelled',
+        endTime: new Date().toISOString()
+      });
+    }
+    
+    if (success) {
+      res.json({
+        success: true,
+        message: 'Execução cancelada com sucesso'
+      });
+    } else {
+      res.status(404).json({
+        error: 'Execução não encontrada ou não pode ser cancelada'
+      });
+    }
+  } catch (error) {
+    console.error('Erro ao cancelar execução:', error);
+    res.status(500).json({
+      error: 'Erro ao cancelar execução',
+      message: error.message
     });
   }
 });
 
-// Rotas de estatísticas
-router.get('/stats', (req, res) => {
-  let runningExecutions = 0;
-  let totalExecutions = mockExecutions.length;
+// === ROTAS DE ESTATÍSTICAS ===
 
-  if (req.app.locals.executionEngine) {
-    const engineExecutions = req.app.locals.executionEngine.getAllExecutions();
-    totalExecutions += engineExecutions.length;
-    runningExecutions = engineExecutions.filter(e => e.status === 'running').length;
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await dbManager.getSystemStats();
+    
+    // Adicionar estatísticas do engine se disponível
+    if (req.app.locals.executionEngine) {
+      const engineStats = req.app.locals.executionEngine.getSecurityStats ? 
+        req.app.locals.executionEngine.getSecurityStats() : {};
+      
+      stats.engineStats = engineStats;
+      stats.runningExecutions = req.app.locals.executionEngine.getAllExecutions()
+        .filter(e => e.status === 'running').length;
+    }
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    res.status(500).json({
+      error: 'Erro ao buscar estatísticas',
+      message: error.message
+    });
   }
+});
 
-  const stats = {
-    totalScripts: mockScripts.length,
-    activeScripts: mockScripts.filter(s => s.status === 'active').length,
-    totalExecutions,
-    runningExecutions,
-    successRate: 87.5,
-    avgExecutionTime: 15000
+// === ROTAS DE LOGS ===
+
+router.get('/logs', async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 50,
+      level,
+      context,
+      executionId,
+      startDate,
+      endDate
+    } = req.query;
+
+    const options = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      level,
+      context,
+      executionId,
+      startDate,
+      endDate
+    };
+
+    const result = await dbManager.getSystemLogs(options);
+    
+    res.json({
+      success: true,
+      data: result.logs,
+      pagination: result.pagination
+    });
+  } catch (error) {
+    console.error('Erro ao buscar logs:', error);
+    res.status(500).json({
+      error: 'Erro ao buscar logs',
+      message: error.message
+    });
+  }
+});
+
+// === ROTAS DE CONFIGURAÇÃO ===
+
+router.get('/config', (req, res) => {
+  const config = {
+    general: {
+      serverPort: process.env.PORT || 3000,
+      websocketPort: process.env.WS_PORT || 3001,
+      maxConcurrentExecutions: 5,
+      logLevel: process.env.LOG_LEVEL || 'info'
+    },
+    playwright: {
+      defaultBrowser: 'chromium',
+      headless: true,
+      timeout: 30000,
+      screenshotsEnabled: true,
+      videosEnabled: false
+    },
+    database: {
+      type: 'sqlite',
+      connected: true,
+      location: './prisma/playwright_hub.db'
+    },
+    security: {
+      isolationLevel: 'HIGH',
+      sanitizationEnabled: true,
+      quarantineEnabled: true,
+      dockerAvailable: req.app.locals.dockerAvailable || false
+    }
   };
   
   res.json({
     success: true,
-    data: stats
+    data: config
   });
+});
+
+// === ROTAS DE SAÚDE DO SISTEMA ===
+
+router.get('/health', async (req, res) => {
+  try {
+    const dbHealth = await dbManager.healthCheck();
+    
+    const health = {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      database: dbHealth,
+      executionEngine: {
+        available: !!req.app.locals.executionEngine,
+        activeExecutions: req.app.locals.executionEngine ? 
+          req.app.locals.executionEngine.getAllExecutions().filter(e => e.status === 'running').length : 0
+      },
+      websocket: {
+        available: !!req.app.locals.websocketManager,
+        connections: req.app.locals.websocketManager ? 
+          req.app.locals.websocketManager.getConnectionCount() : 0
+      }
+    };
+    
+    const overallStatus = dbHealth.status === 'healthy' ? 'OK' : 'DEGRADED';
+    
+    res.status(overallStatus === 'OK' ? 200 : 503).json({
+      success: true,
+      data: health
+    });
+  } catch (error) {
+    console.error('Erro no health check:', error);
+    res.status(503).json({
+      success: false,
+      error: 'Health check falhou',
+      message: error.message
+    });
+  }
 });
 
 // Status do WebSocket
@@ -407,70 +642,38 @@ router.get('/websocket/status', (req, res) => {
     data: {
       connections: wsManager.getConnectionCount(),
       activeExecutions: wsManager.getActiveExecutions(),
-      port: 3001
+      port: process.env.WS_PORT || 3001
     }
   });
 });
 
-// Rota de logs
-router.get('/logs', (req, res) => {
-  const logs = [
-    {
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      message: 'Sistema Playwright Hub iniciado com sucesso',
-      service: 'backend'
-    },
-    {
-      timestamp: new Date(Date.now() - 60000).toISOString(),
-      level: 'info',
-      message: 'WebSocket server ativo na porta 3001',
-      service: 'websocket'
-    },
-    {
-      timestamp: new Date(Date.now() - 120000).toISOString(),
-      level: 'info',
-      message: 'Engine de execução Playwright inicializado',
-      service: 'execution-engine'
-    }
-  ];
-  
-  res.json({
-    success: true,
-    data: logs
-  });
-});
-
-// Rota de configurações
-router.get('/config', (req, res) => {
-  const config = {
-    general: {
-      serverPort: 3000,
-      websocketPort: 3001,
-      maxConcurrentExecutions: 5,
-      logLevel: 'info'
-    },
-    playwright: {
-      defaultBrowser: 'chromium',
-      headless: true,
-      timeout: 30000,
-      screenshotsEnabled: true,
-      videosEnabled: false
-    }
-  };
-  
-  res.json({
-    success: true,
-    data: config
-  });
-});
+// === MIDDLEWARE DE ERRO ===
 
 // Middleware de erro para rotas da API
 router.use((err, req, res, next) => {
   console.error('Erro na API:', err);
+  
+  // Log do erro no banco se possível
+  if (dbManager) {
+    dbManager.createSystemLog({
+      level: 'error',
+      message: err.message,
+      context: 'api',
+      metadata: {
+        stack: err.stack,
+        url: req.url,
+        method: req.method,
+        ip: req.ip
+      }
+    }).catch(logError => {
+      console.error('Erro ao salvar log no banco:', logError);
+    });
+  }
+  
   res.status(500).json({
     error: 'Erro interno da API',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Erro interno do servidor',
+    timestamp: new Date().toISOString()
   });
 });
 

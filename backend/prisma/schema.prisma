@@ -1,0 +1,164 @@
+// Schema do banco de dados SQLite para Playwright Hub
+// Gerado automaticamente pelo Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./playwright_hub.db"
+}
+
+// Tabela de Scripts
+model Script {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  code        String   @db.Text
+  parameters  String   @default("{}") // JSON string
+  tags        String   @default("[]") // JSON array
+  status      String   @default("draft") // draft, active, disabled
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relacionamentos
+  executions  Execution[]
+  
+  @@map("scripts")
+}
+
+// Tabela de Execuções
+model Execution {
+  id          String    @id @default(cuid())
+  scriptId    String
+  scriptName  String
+  status      String    @default("queued") // queued, running, completed, failed, cancelled
+  startTime   DateTime  @default(now())
+  endTime     DateTime?
+  duration    Int?      // em millisegundos
+  progress    Int       @default(0)
+  
+  // Dados da execução
+  parameters  String    @default("{}") // JSON string
+  config      String    @default("{}") // JSON string
+  logs        String    @default("[]") // JSON array
+  screenshots String    @default("[]") // JSON array
+  result      String?   @db.Text // JSON string
+  error       String?   @db.Text
+  
+  // Metadados de segurança
+  securityLevel     String  @default("HIGH")
+  sanitizationId    String?
+  validationId      String?
+  quarantined       Boolean @default(false)
+  
+  // Relacionamentos
+  script      Script  @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  
+  @@map("executions")
+}
+
+// Tabela de Logs do Sistema
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   // info, warn, error, debug, security
+  message   String   @db.Text
+  context   String?  // execution, security, system
+  metadata  String   @default("{}") // JSON string
+  timestamp DateTime @default(now())
+  
+  // Relacionamentos opcionais
+  executionId String?
+  
+  @@map("system_logs")
+}
+
+// Tabela de Configurações do Sistema
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?
+  category    String   @default("general") // general, security, performance
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("system_config")
+}
+
+// Tabela de Métricas de Segurança
+model SecurityMetric {
+  id                    String   @id @default(cuid())
+  totalExecutions       Int      @default(0)
+  blockedExecutions     Int      @default(0)
+  timeoutExecutions     Int      @default(0)
+  memoryViolations      Int      @default(0)
+  cpuViolations         Int      @default(0)
+  quarantinedScripts    Int      @default(0)
+  
+  // Métricas de performance
+  avgExecutionTime      Float    @default(0)
+  avgSanitizationTime   Float    @default(0)
+  avgValidationTime     Float    @default(0)
+  
+  // Timestamp
+  recordedAt            DateTime @default(now())
+  
+  @@map("security_metrics")
+}
+
+// Tabela de Código em Quarentena
+model QuarantinedCode {
+  id            String   @id @default(cuid())
+  executionId   String?
+  originalCode  String   @db.Text
+  sanitizedCode String?  @db.Text
+  reason        String   @db.Text
+  errors        String   @default("[]") // JSON array
+  severity      String   @default("medium") // low, medium, high, critical
+  reviewed      Boolean  @default(false)
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime @default(now())
+  
+  @@map("quarantined_code")
+}
+
+// Tabela de Usuários (para futuras funcionalidades)
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  password  String   // Hash da senha
+  role      String   @default("user") // user, admin, security
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("users")
+}
+
+// Tabela de Sessões de Usuário
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  // Relacionamentos
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("user_sessions")
+}
+
+// Índices para performance
+// Os índices são criados automaticamente pelo Prisma para:
+// - Chaves primárias (@id)
+// - Campos únicos (@unique)
+// - Chaves estrangeiras (relations)
+
+// Índices adicionais podem ser adicionados conforme necessário
