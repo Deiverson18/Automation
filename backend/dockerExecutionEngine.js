@@ -480,6 +480,9 @@ test.describe('Automated Test - ${executionId}', () => {
     const lines = output.split('\n').filter(line => line.trim());
     
     lines.forEach(line => {
+      // Processar dados exportados primeiro
+      this.processExportedData(executionId, line);
+      
       // Detectar logs do Playwright
       if (line.includes('[PLAYWRIGHT]')) {
         const message = line.replace(/.*\[PLAYWRIGHT\]/, '').trim();
@@ -519,6 +522,106 @@ test.describe('Automated Test - ${executionId}', () => {
         this.sendLog(executionId, 'debug', line.trim());
       }
     });
+  }
+
+  processExportedData(executionId, line) {
+    const EXPORT_PREFIX = 'EXPORT_DATA::';
+    
+    if (line.includes(EXPORT_PREFIX)) {
+      try {
+        // Extrair dados JSON da linha
+        const jsonData = line.split(EXPORT_PREFIX)[1].trim();
+        
+        if (!jsonData) {
+          this.sendLog(executionId, 'warn', 'Dados de exportação vazios detectados');
+          return;
+        }
+        
+        // Tentar fazer parse do JSON
+        const parsedData = JSON.parse(jsonData);
+        
+        // Validar se é um objeto válido
+        if (typeof parsedData !== 'object' || parsedData === null) {
+          this.sendLog(executionId, 'error', 'Dados exportados devem ser um objeto JSON válido');
+          return;
+        }
+        
+        const execution = this.executions.get(executionId);
+        if (!execution) {
+          this.sendLog(executionId, 'error', 'Contexto de execução não encontrado para dados exportados');
+          return;
+        }
+        
+        // Inicializar resultado se não existir
+        if (!execution.result) {
+          execution.result = {};
+        }
+        
+        // Mesclar dados exportados com resultado existente
+        Object.assign(execution.result, parsedData);
+        
+        // Adicionar metadados de exportação
+        if (!execution.result._metadata) {
+          execution.result._metadata = {
+            exportCount: 0,
+            lastExportTime: null,
+            exportHistory: []
+          };
+        }
+        
+        execution.result._metadata.exportCount++;
+        execution.result._metadata.lastExportTime = new Date().toISOString();
+        execution.result._metadata.exportHistory.push({
+          timestamp: new Date().toISOString(),
+          keys: Object.keys(parsedData),
+          dataSize: JSON.stringify(parsedData).length
+        });
+        
+        // Manter apenas os últimos 10 registros de histórico
+        if (execution.result._metadata.exportHistory.length > 10) {
+          execution.result._metadata.exportHistory = execution.result._metadata.exportHistory.slice(-10);
+        }
+        
+        // Enviar atualização em tempo real
+        this.sendUpdate(executionId, 'RESULT_UPDATE', { 
+          result: execution.result,
+          exportedKeys: Object.keys(parsedData),
+          timestamp: new Date().toISOString()
+        });
+        
+        // Log de sucesso
+        this.sendLog(executionId, 'info', 
+          `Dados exportados processados: ${Object.keys(parsedData).join(', ')}`);
+        
+        logger.info(`Dados exportados processados para execução ${executionId}:`, {
+          executionId,
+          exportedKeys: Object.keys(parsedData),
+          dataSize: JSON.stringify(parsedData).length,
+          totalExports: execution.result._metadata.exportCount
+        });
+        
+      } catch (error) {
+        // Tratamento detalhado de erros
+        let errorMessage = 'Falha ao processar dados exportados';
+        
+        if (error instanceof SyntaxError) {
+          errorMessage = `JSON inválido nos dados exportados: ${error.message}`;
+        } else if (error.name === 'TypeError') {
+          errorMessage = `Erro de tipo nos dados exportados: ${error.message}`;
+        } else {
+          errorMessage = `Erro inesperado ao processar dados: ${error.message}`;
+        }
+        
+        this.sendLog(executionId, 'error', errorMessage);
+        
+        logger.error(`Erro ao processar dados exportados para execução ${executionId}:`, {
+          executionId,
+          error: error.message,
+          stack: error.stack,
+          rawLine: line
+        });
+      }
+    }
   }
 
   handleScreenshot(executionId, logLine) {

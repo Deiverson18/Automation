@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Save, X, Play, FileText, Tag, Settings } from 'lucide-react';
+import { Save, X, Play, FileText, Tag, Settings, Code } from 'lucide-react';
 import { Script } from '../../types';
+import ScriptTemplates from './ScriptTemplates';
 
 interface ScriptEditorProps {
   script?: Script;
@@ -26,6 +27,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
   });
 
   const [newTag, setNewTag] = useState('');
+  const [showTemplates, setShowTemplates] = useState(false);
 
   useEffect(() => {
     if (script) {
@@ -64,6 +66,14 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
     }
   };
 
+  const handleSelectTemplate = (templateCode: string) => {
+    setFormData({
+      ...formData,
+      code: templateCode
+    });
+    setShowTemplates(false);
+  };
+
   const removeTag = (tagToRemove: string) => {
     setFormData({
       ...formData,
@@ -93,6 +103,35 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
               {script ? 'Editar Script' : 'Novo Script'}
             </h2>
           </div>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => setShowTemplates(true)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
+            >
+              <Code className="w-4 h-4" />
+              <span>Templates</span>
+            </button>
+            <button
+              onClick={onCancel}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h4 className="font-medium text-blue-800 dark:text-blue-400 mb-2">
+              💡 Sistema de Exportação de Dados
+            </h4>
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              Use <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">console.log('EXPORT_DATA::', JSON.stringify(dados))</code> 
+              para exportar dados do seu script. Os dados serão capturados automaticamente pelo backend e exibidos nos resultados.
+            </p>
+          </div>
+
           <button
             onClick={onCancel}
             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -216,6 +255,12 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
             </button>
           </div>
         </form>
+
+        <ScriptTemplates
+          isOpen={showTemplates}
+          onClose={() => setShowTemplates(false)}
+          onSelectTemplate={handleSelectTemplate}
+        />
       </motion.div>
     </motion.div>
   );

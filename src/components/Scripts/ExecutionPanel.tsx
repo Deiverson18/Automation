@@ -59,6 +59,36 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
       playwrightService.off('executionFailed', handleExecutionUpdate);
       playwrightService.off('executionCancelled', handleExecutionUpdate);
       playwrightService.off('logAdded', handleLogAdded);
+      
+      const handleResultUpdate = ({ executionId, result }: { executionId: string; result: any }) => {
+        if (executionId === execution.id) {
+          setExecution(prev => ({
+            ...prev,
+            result
+          }));
+        }
+      };
+
+      playwrightService.on('resultUpdated', handleResultUpdate);
+
+      return () => {
+        playwrightService.off('resultUpdated', handleResultUpdate);
+      };
+      
+      const handleResultUpdate = ({ executionId, result }: { executionId: string; result: any }) => {
+        if (executionId === execution.id) {
+          setExecution(prev => ({
+            ...prev,
+            result
+          }));
+        }
+      };
+
+      playwrightService.on('resultUpdated', handleResultUpdate);
+
+      return () => {
+        playwrightService.off('resultUpdated', handleResultUpdate);
+      };
     };
   }, [execution.id]);
 
