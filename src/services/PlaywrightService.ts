@@ -38,6 +38,7 @@ class PlaywrightService extends EventEmitter {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private heartbeatInterval: number | null = null;
+  private apiBasePath: string;
   private scripts: Script[] = [];
   private systemStats: SystemStats | null = null;
   private config: PlaywrightConfig = {
@@ -51,7 +52,23 @@ class PlaywrightService extends EventEmitter {
 
   constructor() {
     super();
+    // Determinar o caminho base da API baseado no ambiente
+    this.apiBasePath = this.determineApiBasePath();
     this.connectWebSocket();
+  }
+
+  /**
+   * Determina o caminho base da API baseado no ambiente atual
+   */
+  private determineApiBasePath(): string {
+    // Em produção, a API está no mesmo servidor que serve o frontend
+    // Em desenvolvimento, a API está em um servidor separado (geralmente na porta 3000)
+    if (process.env.NODE_ENV === 'development') {
+      return 'http://localhost:3000/api';
+    }
+    
+    // Em produção, usamos o caminho relativo
+    return '/api';
   }
 
   // === GETTERS ===
@@ -281,7 +298,7 @@ class PlaywrightService extends EventEmitter {
       console.log(`🚀 Iniciando execução do script ${scriptId}`);
       
       // Fazer requisição para o backend para iniciar execução
-      const response = await fetch('/api/executions', {
+      const response = await fetch(`${this.apiBasePath}/executions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -342,7 +359,7 @@ class PlaywrightService extends EventEmitter {
     try {
       console.log(`🛑 Cancelando execução ${executionId}`);
       
-      const response = await fetch(`/api/executions/${executionId}/cancel`, {
+      const response = await fetch(`${this.apiBasePath}/executions/${executionId}/cancel`, {
         method: 'POST'
       });
 
@@ -407,7 +424,7 @@ class PlaywrightService extends EventEmitter {
     try {
       console.log('📊 Buscando estatísticas do sistema');
       
-      const response = await fetch('/api/stats');
+      const response = await fetch(`${this.apiBasePath}/stats`);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -458,7 +475,7 @@ class PlaywrightService extends EventEmitter {
       if (options.sortBy) params.append('sortBy', options.sortBy);
       if (options.sortOrder) params.append('sortOrder', options.sortOrder);
       
-      const response = await fetch(`/api/executions?${params.toString()}`);
+      const response = await fetch(`${this.apiBasePath}/executions?${params.toString()}`);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -490,7 +507,7 @@ class PlaywrightService extends EventEmitter {
     try {
       console.log('🆕 Criando novo script:', scriptData.name);
       
-      const response = await fetch('/api/scripts', {
+      const response = await fetch(`${this.apiBasePath}/scripts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -530,7 +547,7 @@ class PlaywrightService extends EventEmitter {
     try {
       console.log('📝 Atualizando script:', scriptId);
       
-      const response = await fetch(`/api/scripts/${scriptId}`, {
+      const response = await fetch(`${this.apiBasePath}/scripts/${scriptId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -584,7 +601,7 @@ class PlaywrightService extends EventEmitter {
     try {
       console.log('🔍 Buscando script:', scriptId);
       
-      const response = await fetch(`/api/scripts/${scriptId}`);
+      const response = await fetch(`${this.apiBasePath}/scripts/${scriptId}`);
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -642,7 +659,7 @@ class PlaywrightService extends EventEmitter {
       if (options.sortBy) params.append('sortBy', options.sortBy);
       if (options.sortOrder) params.append('sortOrder', options.sortOrder);
       
-      const response = await fetch(`/api/scripts?${params.toString()}`);
+      const response = await fetch(`${this.apiBasePath}/scripts?${params.toString()}`);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -674,7 +691,7 @@ class PlaywrightService extends EventEmitter {
     try {
       console.log('🗑️ Deletando script:', scriptId);
       
-      const response = await fetch(`/api/scripts/${scriptId}`, {
+      const response = await fetch(`${this.apiBasePath}/scripts/${scriptId}`, {
         method: 'DELETE'
       });
 
