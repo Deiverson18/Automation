@@ -90,12 +90,20 @@ IF %ERRORLEVEL% EQU 0 (
     ECHO [ERRO] Backend nao esta respondendo na porta 3000
 )
 
-REM Verificar NGINX
+REM Verificar NGINX HTTP
 netstat -an | findstr :80 >nul
 IF %ERRORLEVEL% EQU 0 (
-    ECHO [OK] NGINX ativo na porta 80
+    ECHO [OK] NGINX HTTP ativo na porta 80
 ) ELSE (
-    ECHO [AVISO] NGINX nao esta respondendo na porta 80
+    ECHO [AVISO] NGINX HTTP nao esta respondendo na porta 80
+)
+
+REM Verificar NGINX HTTPS
+netstat -an | findstr :443 >nul
+IF %ERRORLEVEL% EQU 0 (
+    ECHO [OK] NGINX HTTPS ativo na porta 443
+) ELSE (
+    ECHO [AVISO] NGINX HTTPS nao esta respondendo na porta 443
 )
 
 ECHO.
@@ -104,21 +112,29 @@ ECHO         SISTEMA INICIADO!
 ECHO ========================================
 ECHO.
 ECHO URLs de acesso:
-ECHO - Principal: http://localhost
-ECHO - Dashboard: http://localhost/dashboard
-ECHO - API: http://localhost/api/health
+ECHO - HTTPS Principal: https://192.168.0.19
+ECHO - HTTPS Local: https://localhost
+ECHO - HTTP (redireciona): http://192.168.0.19
+ECHO - Dashboard: https://192.168.0.19/dashboard
+ECHO - API: https://192.168.0.19/api/health
 ECHO - Backend direto: http://localhost:3000
+ECHO.
+ECHO IMPORTANTE:
+ECHO - O navegador mostrara aviso de certificado autoassinado
+ECHO - Clique em "Avancado" e "Continuar para o site"
+ECHO - Aceite o certificado para acesso completo
 ECHO.
 ECHO Comandos uteis:
 ECHO - Parar: scripts\stop.bat
 ECHO - Reiniciar: scripts\restart.bat
 ECHO - Status: scripts\status.bat
+ECHO - Teste HTTPS: scripts\test-https.bat
 ECHO - Logs: scripts\logs.bat
 ECHO.
 
 REM Tentar abrir o navegador
 ECHO [INFO] Abrindo navegador...
-start http://localhost
+start https://192.168.0.19
 
 ECHO.
 ECHO Pressione qualquer tecla para sair...

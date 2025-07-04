@@ -94,6 +94,20 @@ IF NOT EXIST "%NGINX_PATH%\nginx.exe" (
 ) ELSE (
     ECHO [OK] NGINX encontrado
 
+    REM Verificar se SSL foi configurado
+    IF NOT EXIST "%NGINX_PATH%\ssl\nginx-selfsigned.crt" (
+        ECHO [INFO] Certificados SSL nao encontrados
+        ECHO [INFO] Executando configuracao SSL...
+        call scripts\setup-ssl.bat
+        IF %ERRORLEVEL% NEQ 0 (
+            ECHO [ERRO] Falha na configuracao SSL
+            SET NGINX_OK=false
+            GOTO SKIP_NGINX
+        )
+    ) ELSE (
+        ECHO [OK] Certificados SSL encontrados
+    )
+
     REM Backup da configuracao original
     IF EXIST "%NGINX_PATH%\conf\nginx.conf" (
         copy "%NGINX_PATH%\conf\nginx.conf" "%NGINX_PATH%\conf\nginx.conf.backup" >nul 2>&1
@@ -128,26 +142,30 @@ IF NOT EXIST "%NGINX_PATH%\nginx.exe" (
             IF %ERRORLEVEL% EQU 0 (
                 ECHO [INFO] Parando NGINX existente...
                 nginx -s quit >nul 2>&1
-                timeout /t 2 /nobreak >nul
+                timeout /t 3 /nobreak >nul
             )
             
-            REM Recarregar configuracao
-            ECHO [INFO] Recarregando configuracao NGINX...
+            REM Iniciar NGINX
+            ECHO [INFO] Iniciando NGINX com configuracao HTTPS...
             start "" nginx.exe
-            timeout /t 2 /nobreak >nul
+            timeout /t 3 /nobreak >nul
             
             REM Verificar se NGINX iniciou
             tasklist /fi "imagename eq nginx.exe" | findstr nginx >nul
             IF %ERRORLEVEL% EQU 0 (
-                ECHO [OK] NGINX iniciado com nova configuracao
+                ECHO [OK] NGINX iniciado com configuracao HTTPS
                 SET NGINX_OK=true
             ) ELSE (
                 ECHO [ERRO] Falha ao iniciar NGINX
+                ECHO [INFO] Verificando logs de erro...
+                IF EXIST "logs\error.log" type logs\error.log | findstr /C:"[error]" | tail -5
                 SET NGINX_OK=false
             )
             
         ) ELSE (
             ECHO [ERRO] Configuracao NGINX invalida
+            ECHO [INFO] Testando configuracao...
+            nginx -t
             SET NGINX_OK=false
         )
         cd "%PROJECT_ROOT%"
@@ -159,9 +177,12 @@ IF NOT EXIST "%NGINX_PATH%\nginx.exe" (
     del "temp\nginx.conf" >nul 2>&1
 )
 
+:SKIP_NGINX
+
 REM Configurar firewall
 ECHO [STEP] Configurando firewall...
 netsh advfirewall firewall add rule name="Playwright Hub HTTP" dir=in action=allow protocol=TCP localport=80 >nul 2>&1
+netsh advfirewall firewall add rule name="Playwright Hub HTTPS" dir=in action=allow protocol=TCP localport=443 >nul 2>&1
 netsh advfirewall firewall add rule name="Playwright Hub Backend" dir=in action=allow protocol=TCP localport=3000 >nul 2>&1
 ECHO [OK] Firewall configurado
 
@@ -172,6 +193,9 @@ ECHO NODE_ENV=production
 ECHO PORT=3000
 ECHO LOG_LEVEL=info
 ECHO LOG_FILE=logs\backend.log
+ECHO HTTPS_ENABLED=true
+ECHO SSL_CERT_PATH=C:\nginx\ssl\nginx-selfsigned.crt
+ECHO SSL_KEY_PATH=C:\nginx\ssl\nginx-selfsigned.key
 ) > .env
 ECHO [OK] Arquivo .env criado
 
@@ -182,17 +206,29 @@ ECHO ========================================
 ECHO.
 
 IF "%NGINX_OK%"=="true" (
-    ECHO [INFO] Sistema configurado com NGINX
-    ECHO Acesse: http://localhost
+    ECHO [INFO] Sistema configurado com NGINX HTTPS
     ECHO.
-    ECHO [INFO] Testando conectividade...
+    ECHO URLs de acesso:
+    ECHO - HTTPS Local: https://localhost
+    ECHO - HTTPS Rede: https://192.168.0.19
+    ECHO - HTTP (redireciona): http://localhost
+    ECHO - HTTP Rede (redireciona): http://192.168.0.19
+    ECHO.
+    ECHO [INFO] Testando conectividade HTTPS...
     timeout /t 3 /nobreak >nul
-    curl -s http://localhost >nul 2>&1
+    curl -k -s https://localhost >nul 2>&1
     IF %ERRORLEVEL% EQU 0 (
-        ECHO [OK] Frontend acessivel via NGINX
+        ECHO [OK] HTTPS local acessivel
     ) ELSE (
-        ECHO [AVISO] Frontend pode nao estar acessivel ainda
+        ECHO [AVISO] HTTPS local pode nao estar acessivel ainda
     )
+    
+    ECHO.
+    ECHO IMPORTANTE:
+    ECHO - O navegador mostrara aviso de certificado autoassinado
+    ECHO - Clique em "Avancado" e "Continuar para o site"
+    ECHO - O certificado e valido por 1 ano
+    
 ) ELSE (
     ECHO [INFO] Sistema configurado sem NGINX
     ECHO Acesse: http://localhost:3000
