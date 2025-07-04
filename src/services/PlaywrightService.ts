@@ -1,5 +1,5 @@
 import { EventEmitter } from '../utils/EventEmitter';
-import { Script } from '../types';
+import { Script, Execution, SystemStats, ScriptParameter } from '../types';
 
 export interface PlaywrightExecution {
   id: string;
@@ -376,12 +376,95 @@ class PlaywrightService extends EventEmitter {
     }
   }
 
+  // === API METHODS ===
+
+  /**
+   * Busca estatísticas do sistema
+   */
+  async getSystemStats(): Promise<SystemStats> {
+    try {
+      console.log('📊 Buscando estatísticas do sistema');
+      
+      const response = await fetch('/api/stats');
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao buscar estatísticas');
+      }
+
+      return result.data;
+    } catch (error) {
+      console.error('❌ Erro ao buscar estatísticas:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Busca execuções com filtros opcionais
+   */
+  async getExecutions(options: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    scriptId?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  } = {}): Promise<{
+    executions: Execution[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      pages: number;
+    };
+  }> {
+    try {
+      console.log('📋 Listando execuções com filtros:', options);
+      
+      const params = new URLSearchParams();
+      
+      if (options.page) params.append('page', options.page.toString());
+      if (options.limit) params.append('limit', options.limit.toString());
+      if (options.status) params.append('status', options.status);
+      if (options.scriptId) params.append('scriptId', options.scriptId);
+      if (options.sortBy) params.append('sortBy', options.sortBy);
+      if (options.sortOrder) params.append('sortOrder', options.sortOrder);
+      
+      const response = await fetch(`/api/executions?${params.toString()}`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao listar execuções');
+      }
+
+      return {
+        executions: result.data,
+        pagination: result.pagination
+      };
+    } catch (error) {
+      console.error('❌ Erro ao listar execuções:', error);
+      throw error;
+    }
+  }
+
   // === SCRIPT MANAGEMENT METHODS ===
 
   /**
    * Cria um novo script
    */
-  async createScript(scriptData: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>): Promise<Script> {
+  async createScript(scriptData: Omit<Script, 'id' | 'createdAt' | 'updatedAt'> | any): Promise<Script> {
     try {
       console.log('🆕 Criando novo script:', scriptData.name);
       
@@ -418,7 +501,7 @@ class PlaywrightService extends EventEmitter {
   /**
    * Atualiza um script existente
    */
-  async updateScript(scriptId: string, scriptData: Partial<Omit<Script, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Script> {
+  async updateScript(scriptId: string, scriptData: Partial<Omit<Script, 'id' | 'createdAt' | 'updatedAt'>> | any): Promise<Script> {
     try {
       console.log('📝 Atualizando script:', scriptId);
       
@@ -588,6 +671,39 @@ class PlaywrightService extends EventEmitter {
       throw error;
     }
   }
+
+  /**
+   * Carrega todos os dados necessários para a aplicação
+   * Retorna scripts, execuções e estatísticas
+   */
+  async loadAppData(): Promise<{
+    scripts: Script[];
+    executions: Execution[];
+    stats: SystemStats;
+  }> {
+    try {
+      console.log('🔄 Carregando dados da aplicação');
+      
+      // Carregar dados em paralelo para melhor performance
+      const [scriptsResult, executionsResult, stats] = await Promise.all([
+        this.getScripts({ limit: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
+        this.getExecutions({ limit: 20, sortBy: 'startTime', sortOrder: 'desc' }),
+        this.getSystemStats()
+      ]);
+      
+      console.log('✅ Dados carregados com sucesso');
+      
+      return {
+        scripts: scriptsResult.scripts,
+        executions: executionsResult.executions,
+        stats
+      };
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados da aplicação:', error);
+      throw error;
+    }
+  }
+
   disconnect() {
     console.log('🔌 Desconectando WebSocket...');
     this.stopHeartbeat();

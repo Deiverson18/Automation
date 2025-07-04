@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion'; 
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { useApi } from './hooks/useApi';
+import { playwrightService } from './services/PlaywrightService';
 import LoginForm from './components/Auth/LoginForm';
 import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
@@ -14,7 +14,7 @@ import ScriptListEnhanced from './components/Scripts/ScriptListEnhanced';
 import ScriptEditor from './components/Scripts/ScriptEditor';
 import ExecutionList from './components/Executions/ExecutionList';
 import ExecutionMonitor from './components/Scripts/ExecutionMonitor';
-import { 
+import {
   FileText, 
   Play, 
   CheckCircle, 
@@ -24,24 +24,19 @@ import {
   Plus,
   Filter,
   Search,
-  Shield
+  Shield,
+  AlertCircle,
+  Info
 } from 'lucide-react';
-import { Script } from './types';
+import { Script, Execution, SystemStats } from './types';
 
 const AppContent: React.FC = () => {
   const { user } = useAuth();
-  const { 
-    scripts, 
-    executions, 
-    stats, 
-    isLoading, 
-    error: apiError,
-    createScript, 
-    updateScript, 
-    deleteScript, 
-    executeScript, 
-    cancelExecution 
-  } = useApi();
+  const [scripts, setScripts] = useState<Script[]>([]);
+  const [executions, setExecutions] = useState<Execution[]>([]);
+  const [stats, setStats] = useState<SystemStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -51,6 +46,63 @@ const AppContent: React.FC = () => {
     type: 'success' | 'error' | 'info';
     message: string;
   } | null>(null);
+
+  // Carregar dados iniciais
+  React.useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      setApiError(null);
+      
+      try {
+        const { scripts, executions, stats } = await playwrightService.loadAppData();
+        setScripts(scripts);
+        setExecutions(executions);
+        setStats(stats);
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        setApiError(error instanceof Error ? error.message : 'Erro ao carregar dados');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+    
+    // Configurar listeners para atualizações em tempo real
+    const handleScriptCreated = (script: Script) => {
+      setScripts(prev => [script, ...prev]);
+    };
+    
+    const handleScriptUpdated = (script: Script) => {
+      setScripts(prev => prev.map(s => s.id === script.id ? script : s));
+    };
+    
+    const handleScriptDeleted = ({ scriptId }: { scriptId: string }) => {
+      setScripts(prev => prev.filter(s => s.id !== scriptId));
+    };
+    
+    const handleExecutionCreated = (execution: Execution) => {
+      setExecutions(prev => [execution, ...prev]);
+    };
+    
+    const handleExecutionUpdated = (execution: Execution) => {
+      setExecutions(prev => prev.map(e => e.id === execution.id ? execution : e));
+    };
+    
+    playwrightService.on('scriptCreated', handleScriptCreated);
+    playwrightService.on('scriptUpdated', handleScriptUpdated);
+    playwrightService.on('scriptDeleted', handleScriptDeleted);
+    playwrightService.on('executionCreated', handleExecutionCreated);
+    playwrightService.on('executionUpdated', handleExecutionUpdated);
+    
+    return () => {
+      playwrightService.off('scriptCreated', handleScriptCreated);
+      playwrightService.off('scriptUpdated', handleScriptUpdated);
+      playwrightService.off('scriptDeleted', handleScriptDeleted);
+      playwrightService.off('executionCreated', handleExecutionCreated);
+      playwrightService.off('executionUpdated', handleExecutionUpdated);
+    };
+  }, []);
 
   if (!user) {
     return <LoginForm />;
@@ -74,13 +126,13 @@ const AppContent: React.FC = () => {
   const handleSaveScript = async (scriptData: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       if (editingScript) {
-        // Atualizar script existente
-        await updateScript(editingScript.id, scriptData);
+        // Atualizar script existente 
+        await playwrightService.updateScript(editingScript.id, scriptData);
         showNotification('success', `Script "${scriptData.name}" atualizado com sucesso!`);
       } else {
         // Criar novo script
-        await createScript(scriptData);
-        showNotification('success', `Script "${scriptData.name}" criado com sucesso!`);
+        const newScript = await playwrightService.createScript(scriptData);
+        showNotification('success', `Script "${newScript.name}" criado com sucesso!`);
       }
       
       // Fechar editor e limpar estado
@@ -100,7 +152,7 @@ const AppContent: React.FC = () => {
 
   const handleExecuteScript = async (script: Script) => {
     try {
-      await executeScript(script.id, script.parameters);
+      await playwrightService.executeScript(script.id, script.code, script.parameters);
       showNotification('info', `Execução do script "${script.name}" iniciada!`);
     } catch (error) {
       console.error('Erro ao executar script:', error);
@@ -112,7 +164,7 @@ const AppContent: React.FC = () => {
   const handleDeleteScript = async (script: Script) => {
     if (window.confirm(`Tem certeza que deseja excluir o script "${script.name}"?`)) {
       try {
-        await deleteScript(script.id);
+        await playwrightService.deleteScript(script.id);
         showNotification('success', `Script "${script.name}" excluído com sucesso!`);
       } catch (error) {
         console.error('Erro ao deletar script:', error);
@@ -130,7 +182,7 @@ const AppContent: React.FC = () => {
   const handleCancelExecution = async (execution: any) => {
     if (window.confirm(`Tem certeza que deseja cancelar a execução "${execution.scriptName}"?`)) {
       try {
-        await cancelExecution(execution.id);
+        await playwrightService.cancelExecution(execution.id);
         showNotification('info', `Execução "${execution.scriptName}" cancelada!`);
       } catch (error) {
         console.error('Erro ao cancelar execução:', error);
