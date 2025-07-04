@@ -9,9 +9,10 @@ import Header from './components/Layout/Header';
 import StatsCard from './components/Dashboard/StatsCard';
 import ExecutionChart from './components/Dashboard/ExecutionChart';
 import RecentExecutions from './components/Dashboard/RecentExecutions';
-import ScriptList from './components/Scripts/ScriptList';
+import ScriptListEnhanced from './components/Scripts/ScriptListEnhanced';
 import ScriptEditor from './components/Scripts/ScriptEditor';
 import ExecutionList from './components/Executions/ExecutionList';
+import ExecutionMonitor from './components/Scripts/ExecutionMonitor';
 import { 
   FileText, 
   Play, 
@@ -89,6 +90,11 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleExecutionStart = (executionId: string) => {
+    console.log('Execução iniciada:', executionId);
+    // Aqui você pode adicionar lógica adicional quando uma execução é iniciada
+  };
+
   const getTabTitle = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -113,7 +119,7 @@ const AppContent: React.FC = () => {
       case 'dashboard':
         return 'Visão geral da plataforma de automação';
       case 'scripts':
-        return 'Gerencie seus scripts Playwright';
+        return 'Gerencie e execute seus scripts Playwright';
       case 'executions':
         return 'Monitore execuções em andamento e históricas';
       case 'logs':
@@ -207,12 +213,12 @@ const AppContent: React.FC = () => {
               </motion.button>
             </div>
 
-            <ScriptList
+            <ScriptListEnhanced
               scripts={scripts}
-              onExecute={handleExecuteScript}
               onEdit={handleEditScript}
               onDelete={handleDeleteScript}
               onView={handleViewScript}
+              onExecutionStart={handleExecutionStart}
             />
           </div>
         );
@@ -256,6 +262,8 @@ const AppContent: React.FC = () => {
                 <div className="text-blue-600">[DEBUG] Carregando configurações...</div>
                 <div className="text-yellow-600">[WARN] Timeout configurado para 30s</div>
                 <div className="text-gray-600">[INFO] Pronto para receber requisições</div>
+                <div className="text-blue-600">[INFO] Playwright service inicializado</div>
+                <div className="text-green-600">[INFO] WebSocket connection estabelecida</div>
               </div>
             </div>
           </div>
@@ -307,40 +315,44 @@ const AppContent: React.FC = () => {
           <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Configurações Gerais
+                Configurações do Playwright
               </h3>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Porta do Servidor
+                      Navegador Padrão
                     </label>
-                    <input
-                      type="number"
-                      defaultValue={3000}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700"
-                    />
+                    <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700">
+                      <option value="chromium">Chromium</option>
+                      <option value="firefox">Firefox</option>
+                      <option value="webkit">WebKit</option>
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Execuções Simultâneas
+                      Timeout Padrão (ms)
                     </label>
                     <input
                       type="number"
-                      defaultValue={5}
+                      defaultValue={30000}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700"
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Navegador Padrão
+                <div className="flex items-center space-x-4">
+                  <label className="flex items-center space-x-2">
+                    <input type="checkbox" defaultChecked className="rounded" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Modo Headless</span>
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700">
-                    <option value="chromium">Chromium</option>
-                    <option value="firefox">Firefox</option>
-                    <option value="webkit">WebKit</option>
-                  </select>
+                  <label className="flex items-center space-x-2">
+                    <input type="checkbox" defaultChecked className="rounded" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Capturar Screenshots</span>
+                  </label>
+                  <label className="flex items-center space-x-2">
+                    <input type="checkbox" className="rounded" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Gravar Vídeo</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -380,6 +392,9 @@ const AppContent: React.FC = () => {
           </motion.div>
         </main>
       </div>
+
+      {/* Execution Monitor - Always visible */}
+      <ExecutionMonitor />
 
       <AnimatePresence>
         {isEditorOpen && (
