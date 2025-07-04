@@ -163,6 +163,101 @@ router.post('/scripts', [
   });
 });
 
+// Atualizar script existente
+router.put('/scripts/:id', [
+  body('name').notEmpty().withMessage('Nome é obrigatório'),
+  body('code').notEmpty().withMessage('Código é obrigatório'),
+  body('description').optional().isString().withMessage('Descrição deve ser uma string'),
+  body('tags').optional().isArray().withMessage('Tags devem ser um array'),
+  body('tags.*').optional().isString().withMessage('Cada tag deve ser uma string'),
+  body('status').optional().isIn(['draft', 'active', 'disabled']).withMessage('Status deve ser: draft, active ou disabled')
+], handleValidationErrors, (req, res) => {
+  const { id } = req.params;
+  const { name, code, description, tags, status } = req.body;
+  
+  try {
+    // Buscar script existente
+    const scriptIndex = mockScripts.findIndex(script => script.id === id);
+    
+    if (scriptIndex === -1) {
+      return res.status(404).json({
+        error: 'Script não encontrado',
+        message: `Script com ID ${id} não existe`
+      });
+    }
+    
+    const existingScript = mockScripts[scriptIndex];
+    
+    // Validações adicionais de segurança
+    if (name && name.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Nome inválido',
+        message: 'Nome não pode estar vazio'
+      });
+    }
+    
+    if (code && code.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Código inválido',
+        message: 'Código não pode estar vazio'
+      });
+    }
+    
+    // Validar tags se fornecidas
+    if (tags && Array.isArray(tags)) {
+      const invalidTags = tags.filter(tag => typeof tag !== 'string' || tag.trim().length === 0);
+      if (invalidTags.length > 0) {
+        return res.status(400).json({
+          error: 'Tags inválidas',
+          message: 'Todas as tags devem ser strings não vazias'
+        });
+      }
+    }
+    
+    // Preparar dados atualizados
+    const updatedScript = {
+      ...existingScript,
+      name: name || existingScript.name,
+      code: code || existingScript.code,
+      description: description !== undefined ? description : existingScript.description,
+      tags: tags !== undefined ? tags.map(tag => tag.trim()) : existingScript.tags,
+      status: status || existingScript.status,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Atualizar no array mock
+    mockScripts[scriptIndex] = updatedScript;
+    
+    // Log da operação para auditoria
+    console.log(`[API] Script ${id} atualizado por usuário`, {
+      scriptId: id,
+      scriptName: updatedScript.name,
+      timestamp: updatedScript.updatedAt,
+      changes: {
+        name: name !== existingScript.name,
+        code: code !== existingScript.code,
+        description: description !== existingScript.description,
+        tags: JSON.stringify(tags) !== JSON.stringify(existingScript.tags),
+        status: status !== existingScript.status
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      data: updatedScript,
+      message: 'Script atualizado com sucesso'
+    });
+    
+  } catch (error) {
+    console.error(`Erro ao atualizar script ${id}:`, error);
+    res.status(500).json({
+      error: 'Erro interno do servidor',
+      message: 'Falha ao atualizar script',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // Rotas de execuções
 router.get('/executions', (req, res) => {
   // Incluir execuções do engine se disponível
