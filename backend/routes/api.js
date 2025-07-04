@@ -1,5 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 
 // Mock data para demonstração
@@ -10,7 +11,26 @@ const mockScripts = [
     description: 'Teste automatizado de login',
     status: 'active',
     lastRun: new Date().toISOString(),
-    executions: 45
+    executions: 45,
+    code: `// Teste de login automatizado
+await page.goto('https://example.com/login');
+console.log('[PLAYWRIGHT] Navegando para página de login');
+
+await page.fill('#username', 'testuser');
+console.log('[PLAYWRIGHT] Preenchendo campo de usuário');
+
+await page.fill('#password', 'testpass');
+console.log('[PLAYWRIGHT] Preenchendo campo de senha');
+
+await page.click('button[type="submit"]');
+console.log('[PLAYWRIGHT] Clicando no botão de login');
+
+await page.waitForSelector('.dashboard', { timeout: 5000 });
+console.log('[PLAYWRIGHT] Login realizado com sucesso');
+
+// Capturar screenshot
+await page.screenshot({ path: 'login-success.png' });
+console.log('[PLAYWRIGHT] Screenshot capturado');`
   },
   {
     id: '2',
@@ -18,7 +38,27 @@ const mockScripts = [
     description: 'Automação do processo de checkout',
     status: 'active',
     lastRun: new Date().toISOString(),
-    executions: 32
+    executions: 32,
+    code: `// Automação de checkout e-commerce
+await page.goto('https://demo-store.com/product/123');
+console.log('[PLAYWRIGHT] Navegando para página do produto');
+
+await page.click('.add-to-cart');
+console.log('[PLAYWRIGHT] Adicionando produto ao carrinho');
+
+await page.waitForSelector('.cart-notification');
+console.log('[PLAYWRIGHT] Produto adicionado com sucesso');
+
+await page.click('.checkout-btn');
+console.log('[PLAYWRIGHT] Iniciando processo de checkout');
+
+await page.fill('#email', 'test@example.com');
+await page.fill('#first-name', 'João');
+await page.fill('#last-name', 'Silva');
+console.log('[PLAYWRIGHT] Preenchendo dados do cliente');
+
+await page.screenshot({ path: 'checkout-form.png' });
+console.log('[PLAYWRIGHT] Checkout concluído com sucesso');`
   }
 ];
 
@@ -125,62 +165,128 @@ router.post('/scripts', [
 
 // Rotas de execuções
 router.get('/executions', (req, res) => {
+  // Incluir execuções do engine se disponível
+  let allExecutions = [...mockExecutions];
+  
+  if (req.app.locals.executionEngine) {
+    const engineExecutions = req.app.locals.executionEngine.getAllExecutions();
+    allExecutions = [...allExecutions, ...engineExecutions];
+  }
+
   res.json({
     success: true,
-    data: mockExecutions,
-    total: mockExecutions.length
+    data: allExecutions,
+    total: allExecutions.length
   });
 });
 
 router.post('/executions', [
-  body('scriptId').notEmpty().withMessage('Script ID é obrigatório')
-], handleValidationErrors, (req, res) => {
-  const { scriptId, parameters = {} } = req.body;
+  body('scriptId').notEmpty().withMessage('Script ID é obrigatório'),
+  body('code').notEmpty().withMessage('Código é obrigatório')
+], handleValidationErrors, async (req, res) => {
+  const { scriptId, code, parameters = {}, config = {} } = req.body;
   
-  const script = mockScripts.find(s => s.id === scriptId);
-  if (!script) {
-    return res.status(404).json({
-      error: 'Script não encontrado'
+  try {
+    const executionId = uuidv4();
+    
+    // Verificar se o execution engine está disponível
+    if (!req.app.locals.executionEngine) {
+      return res.status(500).json({
+        error: 'Engine de execução não disponível'
+      });
+    }
+
+    // Iniciar execução assíncrona
+    req.app.locals.executionEngine.executeTest(code, executionId, config)
+      .catch(error => {
+        console.error(`Erro na execução ${executionId}:`, error);
+      });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        id: executionId,
+        scriptId,
+        status: 'running',
+        startTime: new Date().toISOString(),
+        parameters,
+        config
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro ao iniciar execução:', error);
+    res.status(500).json({
+      error: 'Erro ao iniciar execução',
+      details: error.message
     });
   }
+});
+
+// Cancelar execução
+router.post('/executions/:id/cancel', (req, res) => {
+  const { id } = req.params;
   
-  const newExecution = {
-    id: Date.now().toString(),
-    scriptId,
-    scriptName: script.name,
-    status: 'queued',
-    startTime: new Date().toISOString(),
-    parameters,
-    logs: []
-  };
+  if (!req.app.locals.executionEngine) {
+    return res.status(500).json({
+      error: 'Engine de execução não disponível'
+    });
+  }
+
+  const success = req.app.locals.executionEngine.cancelExecution(id);
   
-  mockExecutions.unshift(newExecution);
+  if (success) {
+    res.json({
+      success: true,
+      message: 'Execução cancelada com sucesso'
+    });
+  } else {
+    res.status(404).json({
+      error: 'Execução não encontrada ou não pode ser cancelada'
+    });
+  }
+});
+
+// Obter detalhes de uma execução
+router.get('/executions/:id', (req, res) => {
+  const { id } = req.params;
   
-  // Simular mudança de status
-  setTimeout(() => {
-    newExecution.status = 'running';
-  }, 1000);
+  if (!req.app.locals.executionEngine) {
+    return res.status(500).json({
+      error: 'Engine de execução não disponível'
+    });
+  }
+
+  const execution = req.app.locals.executionEngine.getExecution(id);
   
-  setTimeout(() => {
-    newExecution.status = 'completed';
-    newExecution.endTime = new Date().toISOString();
-    newExecution.duration = 15000;
-    newExecution.success = true;
-  }, 5000);
-  
-  res.status(201).json({
-    success: true,
-    data: newExecution
-  });
+  if (execution) {
+    res.json({
+      success: true,
+      data: execution
+    });
+  } else {
+    res.status(404).json({
+      error: 'Execução não encontrada'
+    });
+  }
 });
 
 // Rotas de estatísticas
 router.get('/stats', (req, res) => {
+  let runningExecutions = 0;
+  let totalExecutions = mockExecutions.length;
+
+  if (req.app.locals.executionEngine) {
+    const engineExecutions = req.app.locals.executionEngine.getAllExecutions();
+    totalExecutions += engineExecutions.length;
+    runningExecutions = engineExecutions.filter(e => e.status === 'running').length;
+  }
+
   const stats = {
     totalScripts: mockScripts.length,
     activeScripts: mockScripts.filter(s => s.status === 'active').length,
-    totalExecutions: mockExecutions.length,
-    runningExecutions: mockExecutions.filter(e => e.status === 'running').length,
+    totalExecutions,
+    runningExecutions,
     successRate: 87.5,
     avgExecutionTime: 15000
   };
@@ -191,20 +297,46 @@ router.get('/stats', (req, res) => {
   });
 });
 
+// Status do WebSocket
+router.get('/websocket/status', (req, res) => {
+  if (!req.app.locals.websocketManager) {
+    return res.status(500).json({
+      error: 'WebSocket manager não disponível'
+    });
+  }
+
+  const wsManager = req.app.locals.websocketManager;
+  
+  res.json({
+    success: true,
+    data: {
+      connections: wsManager.getConnectionCount(),
+      activeExecutions: wsManager.getActiveExecutions(),
+      port: 3001
+    }
+  });
+});
+
 // Rota de logs
 router.get('/logs', (req, res) => {
   const logs = [
     {
       timestamp: new Date().toISOString(),
       level: 'info',
-      message: 'Sistema iniciado com sucesso',
+      message: 'Sistema Playwright Hub iniciado com sucesso',
       service: 'backend'
     },
     {
       timestamp: new Date(Date.now() - 60000).toISOString(),
       level: 'info',
-      message: 'Configurações carregadas',
-      service: 'backend'
+      message: 'WebSocket server ativo na porta 3001',
+      service: 'websocket'
+    },
+    {
+      timestamp: new Date(Date.now() - 120000).toISOString(),
+      level: 'info',
+      message: 'Engine de execução Playwright inicializado',
+      service: 'execution-engine'
     }
   ];
   
@@ -219,13 +351,16 @@ router.get('/config', (req, res) => {
   const config = {
     general: {
       serverPort: 3000,
+      websocketPort: 3001,
       maxConcurrentExecutions: 5,
       logLevel: 'info'
     },
     playwright: {
       defaultBrowser: 'chromium',
       headless: true,
-      timeout: 30000
+      timeout: 30000,
+      screenshotsEnabled: true,
+      videosEnabled: false
     }
   };
   

@@ -8,8 +8,13 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+// Importar módulos customizados
+const WebSocketManager = require('./websocketManager');
+const ExecutionEngine = require('./executionEngine');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const WS_PORT = process.env.WS_PORT || 3001;
 
 // Criar diretório de logs se não existir
 const logsDir = path.join(__dirname, '..', 'logs');
@@ -44,6 +49,17 @@ const logger = winston.createLogger({
   ]
 });
 
+// Inicializar WebSocket Manager
+const websocketManager = new WebSocketManager(WS_PORT);
+websocketManager.start();
+
+// Inicializar Execution Engine
+const executionEngine = new ExecutionEngine(websocketManager);
+
+// Disponibilizar instâncias para as rotas
+app.locals.websocketManager = websocketManager;
+app.locals.executionEngine = executionEngine;
+
 // Middleware de segurança
 app.use(helmet({
   contentSecurityPolicy: {
@@ -53,7 +69,7 @@ app.use(helmet({
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "ws:", "wss:"]
+      connectSrc: ["'self'", "ws:", "wss:", `ws://localhost:${WS_PORT}`, `wss://localhost:${WS_PORT}`]
     }
   }
 }));
@@ -105,7 +121,18 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     version: '1.0.0',
     memory: process.memoryUsage(),
-    pid: process.pid
+    pid: process.pid,
+    services: {
+      websocket: {
+        status: 'running',
+        port: WS_PORT,
+        connections: websocketManager.getConnectionCount()
+      },
+      executionEngine: {
+        status: 'running',
+        activeExecutions: executionEngine.getAllExecutions().filter(e => e.status === 'running').length
+      }
+    }
   };
   
   logger.info('Health check accessed', healthCheck);
@@ -114,6 +141,9 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api', require('./routes/api'));
+
+// Servir screenshots
+app.use('/screenshots', express.static(path.join(__dirname, 'screenshots')));
 
 // Servir arquivos estáticos do frontend (fallback)
 const frontendPath = path.join(__dirname, '..', 'dist');
@@ -166,33 +196,50 @@ app.use((req, res) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM recebido, encerrando servidor graciosamente');
-  process.exit(0);
-});
+const gracefulShutdown = () => {
+  logger.info('Iniciando shutdown gracioso...');
+  
+  // Parar WebSocket server
+  websocketManager.stop();
+  
+  // Cleanup do execution engine
+  executionEngine.cleanup();
+  
+  // Fechar servidor HTTP
+  server.close(() => {
+    logger.info('Servidor HTTP fechado');
+    process.exit(0);
+  });
+  
+  // Forçar saída após 10 segundos
+  setTimeout(() => {
+    logger.error('Forçando saída após timeout');
+    process.exit(1);
+  }, 10000);
+};
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT recebido, encerrando servidor graciosamente');
-  process.exit(0);
-});
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 // Tratamento de erros não capturados
 process.on('uncaughtException', (err) => {
   logger.error('Exceção não capturada:', err);
-  process.exit(1);
+  gracefulShutdown();
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Promise rejeitada não tratada:', { reason, promise });
-  process.exit(1);
+  gracefulShutdown();
 });
 
 // Iniciar servidor
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info(`🚀 Playwright Hub Backend rodando em http://0.0.0.0:${PORT}`);
-  logger.info(`📊 Dashboard: http://localhost/dashboard`);
+  logger.info(`🔌 WebSocket Server rodando na porta ${WS_PORT}`);
+  logger.info(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
   logger.info(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`📝 Logs: ${logsDir}`);
+  logger.info(`🎭 Playwright Engine: Ativo`);
 });
 
 module.exports = app;
