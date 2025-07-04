@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from '../utils/EventEmitter';
 
 export interface PlaywrightExecution {
   id: string;
@@ -36,6 +36,7 @@ class PlaywrightService extends EventEmitter {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
+  private heartbeatInterval: number | null = null;
   private config: PlaywrightConfig = {
     timeout: 30000,
     headless: true,
@@ -52,15 +53,19 @@ class PlaywrightService extends EventEmitter {
 
   private connectWebSocket() {
     try {
-      const wsUrl = `ws://localhost:3001`;
+      // Determinar URL do WebSocket baseado no ambiente
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname;
+      const port = process.env.NODE_ENV === 'development' ? '3001' : window.location.port;
+      const wsUrl = `${protocol}//${host}:${port}`;
+      
+      console.log(`🔌 Conectando ao WebSocket: ${wsUrl}`);
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         console.log('✅ WebSocket conectado ao servidor Playwright');
         this.reconnectAttempts = 0;
         this.emit('connected');
-        
-        // Enviar ping para manter conexão viva
         this.startHeartbeat();
       };
 
@@ -73,10 +78,15 @@ class PlaywrightService extends EventEmitter {
         }
       };
 
-      this.ws.onclose = () => {
-        console.log('🔌 WebSocket desconectado');
+      this.ws.onclose = (event) => {
+        console.log(`🔌 WebSocket desconectado (código: ${event.code})`);
         this.emit('disconnected');
-        this.attemptReconnect();
+        this.stopHeartbeat();
+        
+        // Tentar reconectar apenas se não foi um fechamento intencional
+        if (event.code !== 1000) {
+          this.attemptReconnect();
+        }
       };
 
       this.ws.onerror = (error) => {
@@ -107,11 +117,20 @@ class PlaywrightService extends EventEmitter {
   }
 
   private startHeartbeat() {
-    setInterval(() => {
+    this.stopHeartbeat(); // Limpar interval anterior se existir
+    
+    this.heartbeatInterval = window.setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'PING' }));
       }
     }, 30000); // Ping a cada 30 segundos
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
   }
 
   private handleWebSocketMessage(message: any) {
@@ -120,6 +139,10 @@ class PlaywrightService extends EventEmitter {
     switch (type) {
       case 'CONNECTED':
         console.log('🎉 Conectado ao servidor Playwright Hub');
+        break;
+
+      case 'SUBSCRIBED':
+        console.log(`📡 Inscrito para receber atualizações da execução ${executionId}`);
         break;
 
       case 'LOG':
@@ -236,6 +259,8 @@ class PlaywrightService extends EventEmitter {
 
   async executeScript(scriptId: string, code: string, parameters: Record<string, any> = {}): Promise<string> {
     try {
+      console.log(`🚀 Iniciando execução do script ${scriptId}`);
+      
       // Fazer requisição para o backend para iniciar execução
       const response = await fetch('/api/executions', {
         method: 'POST',
@@ -251,7 +276,8 @@ class PlaywrightService extends EventEmitter {
       });
 
       if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
       }
 
       const result = await response.json();
@@ -277,6 +303,8 @@ class PlaywrightService extends EventEmitter {
           type: 'SUBSCRIBE',
           executionId
         }));
+      } else {
+        console.warn('⚠️ WebSocket não conectado, não será possível receber atualizações em tempo real');
       }
 
       return executionId;
@@ -289,12 +317,15 @@ class PlaywrightService extends EventEmitter {
 
   async cancelExecution(executionId: string): Promise<boolean> {
     try {
+      console.log(`🛑 Cancelando execução ${executionId}`);
+      
       const response = await fetch(`/api/executions/${executionId}/cancel`, {
         method: 'POST'
       });
 
       if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
       }
 
       return true;
@@ -319,6 +350,7 @@ class PlaywrightService extends EventEmitter {
   updateConfig(newConfig: Partial<PlaywrightConfig>) {
     this.config = { ...this.config, ...newConfig };
     this.emit('configUpdated', this.config);
+    console.log('⚙️ Configuração do Playwright atualizada:', this.config);
   }
 
   getConfig(): PlaywrightConfig {
@@ -344,11 +376,28 @@ class PlaywrightService extends EventEmitter {
   }
 
   disconnect() {
+    console.log('🔌 Desconectando WebSocket...');
+    this.stopHeartbeat();
+    
     if (this.ws) {
-      this.ws.close();
+      this.ws.close(1000, 'Desconexão intencional');
       this.ws = null;
     }
   }
+
+  // Método para reconectar manualmente
+  reconnect() {
+    console.log('🔄 Reconectando WebSocket manualmente...');
+    this.disconnect();
+    this.reconnectAttempts = 0;
+    setTimeout(() => this.connectWebSocket(), 1000);
+  }
 }
 
+// Exportar instância singleton
 export const playwrightService = new PlaywrightService();
+
+// Adicionar ao window para debug (apenas em desenvolvimento)
+if (process.env.NODE_ENV === 'development') {
+  (window as any).playwrightService = playwrightService;
+}
