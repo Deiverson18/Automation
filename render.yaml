@@ -3,17 +3,18 @@ services:
     name: playwright-automation-platform
     env: node
     plan: free
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        fromService: true
+    buildCommand: "npm install && npm run build && cd backend && npm install"
+    startCommand: "node backend/server.js"
     healthCheckPath: /health
     autoDeploy: true
     branch: main
-    rootDir: .
-    scaling:
-      minInstances: 1
-      maxInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: /api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
