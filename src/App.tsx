@@ -35,6 +35,7 @@ const AppContent: React.FC = () => {
     executions, 
     stats, 
     isLoading, 
+    error: apiError,
     createScript, 
     updateScript, 
     deleteScript, 
@@ -46,11 +47,20 @@ const AppContent: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingScript, setEditingScript] = useState<Script | undefined>(undefined);
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
 
   if (!user) {
     return <LoginForm />;
   }
 
+  // Mostrar notificação temporária
+  const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
+  };
   const handleCreateScript = () => {
     setEditingScript(undefined);
     setIsEditorOpen(true);
@@ -62,22 +72,53 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveScript = async (scriptData: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (editingScript) {
-      await updateScript(editingScript.id, scriptData);
-    } else {
-      await createScript(scriptData);
+    try {
+      if (editingScript) {
+        // Atualizar script existente
+        await updateScript(editingScript.id, scriptData);
+        showNotification('success', `Script "${scriptData.name}" atualizado com sucesso!`);
+      } else {
+        // Criar novo script
+        await createScript(scriptData);
+        showNotification('success', `Script "${scriptData.name}" criado com sucesso!`);
+      }
+      
+      // Fechar editor e limpar estado
+      setIsEditorOpen(false);
+      setEditingScript(undefined);
+      
+    } catch (error) {
+      console.error('Erro ao salvar script:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : 'Erro inesperado ao salvar script';
+      showNotification('error', errorMessage);
+      
+      // Re-throw para que o ScriptEditor possa mostrar o erro também
+      throw error;
     }
-    setIsEditorOpen(false);
-    setEditingScript(undefined);
   };
 
   const handleExecuteScript = async (script: Script) => {
-    await executeScript(script.id, script.parameters);
+    try {
+      await executeScript(script.id, script.parameters);
+      showNotification('info', `Execução do script "${script.name}" iniciada!`);
+    } catch (error) {
+      console.error('Erro ao executar script:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao executar script';
+      showNotification('error', errorMessage);
+    }
   };
 
   const handleDeleteScript = async (script: Script) => {
-    if (window.confirm('Tem certeza que deseja excluir este script?')) {
-      await deleteScript(script.id);
+    if (window.confirm(`Tem certeza que deseja excluir o script "${script.name}"?`)) {
+      try {
+        await deleteScript(script.id);
+        showNotification('success', `Script "${script.name}" excluído com sucesso!`);
+      } catch (error) {
+        console.error('Erro ao deletar script:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Erro ao deletar script';
+        showNotification('error', errorMessage);
+      }
     }
   };
 
@@ -87,14 +128,21 @@ const AppContent: React.FC = () => {
   };
 
   const handleCancelExecution = async (execution: any) => {
-    if (window.confirm('Tem certeza que deseja cancelar esta execução?')) {
-      await cancelExecution(execution.id);
+    if (window.confirm(`Tem certeza que deseja cancelar a execução "${execution.scriptName}"?`)) {
+      try {
+        await cancelExecution(execution.id);
+        showNotification('info', `Execução "${execution.scriptName}" cancelada!`);
+      } catch (error) {
+        console.error('Erro ao cancelar execução:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Erro ao cancelar execução';
+        showNotification('error', errorMessage);
+      }
     }
   };
 
   const handleExecutionStart = (executionId: string) => {
     console.log('Execução iniciada:', executionId);
-    // Aqui você pode adicionar lógica adicional quando uma execução é iniciada
+    showNotification('info', 'Nova execução iniciada!');
   };
 
   const getTabTitle = () => {
@@ -139,11 +187,35 @@ const AppContent: React.FC = () => {
     if (isLoading) {
       return (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-400">Carregando dados...</p>
+          </div>
         </div>
       );
     }
 
+    if (apiError) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Erro ao carregar dados
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">{apiError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        </div>
+      );
+    }
     switch (activeTab) {
       case 'dashboard':
         return (
@@ -412,6 +484,25 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Notification Toast */}
+      {notification && (
+        <motion.div
+          initial={{ opacity: 0, y: -50, x: '-50%' }}
+          animate={{ opacity: 1, y: 0, x: '-50%' }}
+          exit={{ opacity: 0, y: -50, x: '-50%' }}
+          className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg flex items-center space-x-3 ${
+            notification.type === 'success' ? 'bg-green-600 text-white' :
+            notification.type === 'error' ? 'bg-red-600 text-white' :
+            'bg-blue-600 text-white'
+          }`}
+        >
+          {notification.type === 'success' && <CheckCircle className="w-5 h-5" />}
+          {notification.type === 'error' && <AlertCircle className="w-5 h-5" />}
+          {notification.type === 'info' && <Info className="w-5 h-5" />}
+          <span>{notification.message}</span>
+        </motion.div>
+      )}
+      
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}

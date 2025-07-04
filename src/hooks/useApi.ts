@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Script, Execution, SystemStats, Config } from '../types';
+import { playwrightService } from '../services/PlaywrightService';
 
 // Mock data for demonstration
 const mockScripts: Script[] = [
@@ -171,82 +172,154 @@ export const useApi = () => {
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate API calls
     const loadData = async () => {
       setIsLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setScripts(mockScripts);
-      setExecutions(mockExecutions);
-      setStats(mockStats);
-      setIsLoading(false);
+      setError(null);
+      
+      try {
+        // Carregar scripts do backend
+        const scriptsResult = await playwrightService.getScripts({
+          page: 1,
+          limit: 100,
+          sortBy: 'updatedAt',
+          sortOrder: 'desc'
+        });
+        
+        setScripts(scriptsResult.scripts);
+        
+        // Usar dados mock para execuções e stats por enquanto
+        setExecutions(mockExecutions);
+        setStats(mockStats);
+        
+      } catch (err) {
+        console.error('Erro ao carregar dados:', err);
+        setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
+        
+        // Fallback para dados mock em caso de erro
+        setScripts(mockScripts);
+        setExecutions(mockExecutions);
+        setStats(mockStats);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     loadData();
+    
+    // Configurar listeners para atualizações em tempo real
+    const handleScriptCreated = (script: Script) => {
+      setScripts(prev => [script, ...prev]);
+    };
+    
+    const handleScriptUpdated = (script: Script) => {
+      setScripts(prev => prev.map(s => s.id === script.id ? script : s));
+    };
+    
+    const handleScriptDeleted = ({ scriptId }: { scriptId: string }) => {
+      setScripts(prev => prev.filter(s => s.id !== scriptId));
+    };
+    
+    playwrightService.on('scriptCreated', handleScriptCreated);
+    playwrightService.on('scriptUpdated', handleScriptUpdated);
+    playwrightService.on('scriptDeleted', handleScriptDeleted);
+    
+    return () => {
+      playwrightService.off('scriptCreated', handleScriptCreated);
+      playwrightService.off('scriptUpdated', handleScriptUpdated);
+      playwrightService.off('scriptDeleted', handleScriptDeleted);
+    };
   }, []);
 
   const createScript = async (script: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newScript: Script = {
-      ...script,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    setScripts(prev => [...prev, newScript]);
-    return newScript;
+    try {
+      setError(null);
+      const newScript = await playwrightService.createScript(script);
+      // O script será adicionado automaticamente via evento 'scriptCreated'
+      return newScript;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao criar script';
+      setError(errorMessage);
+      throw err;
+    }
   };
 
   const updateScript = async (id: string, updates: Partial<Script>) => {
-    setScripts(prev => prev.map(script => 
-      script.id === id 
-        ? { ...script, ...updates, updatedAt: new Date().toISOString() }
-        : script
-    ));
+    try {
+      setError(null);
+      const updatedScript = await playwrightService.updateScript(id, updates);
+      // O script será atualizado automaticamente via evento 'scriptUpdated'
+      return updatedScript;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao atualizar script';
+      setError(errorMessage);
+      throw err;
+    }
   };
 
   const deleteScript = async (id: string) => {
-    setScripts(prev => prev.filter(script => script.id !== id));
+    try {
+      setError(null);
+      await playwrightService.deleteScript(id);
+      // O script será removido automaticamente via evento 'scriptDeleted'
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao deletar script';
+      setError(errorMessage);
+      throw err;
+    }
   };
 
   const executeScript = async (scriptId: string, parameters: Record<string, any>) => {
     const script = scripts.find(s => s.id === scriptId);
     if (!script) return;
 
-    const newExecution: Execution = {
-      id: Date.now().toString(),
-      scriptId,
-      scriptName: script.name,
-      status: 'queued',
-      startTime: new Date().toISOString(),
-      parameters,
-      logs: [
-        { timestamp: new Date().toISOString(), level: 'info', message: 'Execution queued' }
-      ]
-    };
+    try {
+      setError(null);
+      const executionId = await playwrightService.executeScript(scriptId, script.code, parameters);
+      
+      // Criar execução local para exibição imediata
+      const newExecution: Execution = {
+        id: executionId,
+        scriptId,
+        scriptName: script.name,
+        status: 'queued',
+        startTime: new Date().toISOString(),
+        parameters,
+        logs: [
+          { timestamp: new Date().toISOString(), level: 'info', message: 'Execution queued' }
+        ]
+      };
 
-    setExecutions(prev => [newExecution, ...prev]);
-
-    // Simulate execution progress
-    setTimeout(() => {
-      setExecutions(prev => prev.map(exec => 
-        exec.id === newExecution.id 
-          ? { ...exec, status: 'running', logs: [...exec.logs, 
-              { timestamp: new Date().toISOString(), level: 'info', message: 'Execution started' }
-            ]}
-          : exec
-      ));
-    }, 1000);
-
-    return newExecution;
+      setExecutions(prev => [newExecution, ...prev]);
+      return newExecution;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao executar script';
+      setError(errorMessage);
+      throw err;
+    }
   };
 
   const cancelExecution = async (executionId: string) => {
-    setExecutions(prev => prev.map(exec => 
-      exec.id === executionId 
-        ? { ...exec, status: 'cancelled', endTime: new Date().toISOString() }
-        : exec
-    ));
+    try {
+      setError(null);
+      const success = await playwrightService.cancelExecution(executionId);
+      
+      if (success) {
+        setExecutions(prev => prev.map(exec => 
+          exec.id === executionId 
+            ? { ...exec, status: 'cancelled', endTime: new Date().toISOString() }
+            : exec
+        ));
+      }
+      
+      return success;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao cancelar execução';
+      setError(errorMessage);
+      throw err;
+    }
   };
 
   return {
@@ -254,6 +327,7 @@ export const useApi = () => {
     executions,
     stats,
     isLoading,
+    error,
     createScript,
     updateScript,
     deleteScript,

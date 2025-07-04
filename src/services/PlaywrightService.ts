@@ -1,4 +1,5 @@
 import { EventEmitter } from '../utils/EventEmitter';
+import { Script } from '../types';
 
 export interface PlaywrightExecution {
   id: string;
@@ -375,6 +376,218 @@ class PlaywrightService extends EventEmitter {
     }
   }
 
+  // === SCRIPT MANAGEMENT METHODS ===
+
+  /**
+   * Cria um novo script
+   */
+  async createScript(scriptData: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>): Promise<Script> {
+    try {
+      console.log('🆕 Criando novo script:', scriptData.name);
+      
+      const response = await fetch('/api/scripts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(scriptData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao criar script');
+      }
+
+      console.log('✅ Script criado com sucesso:', result.data.id);
+      this.emit('scriptCreated', result.data);
+      
+      return result.data;
+    } catch (error) {
+      console.error('❌ Erro ao criar script:', error);
+      this.emit('scriptError', { operation: 'create', error });
+      throw error;
+    }
+  }
+
+  /**
+   * Atualiza um script existente
+   */
+  async updateScript(scriptId: string, scriptData: Partial<Omit<Script, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Script> {
+    try {
+      console.log('📝 Atualizando script:', scriptId);
+      
+      const response = await fetch(`/api/scripts/${scriptId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(scriptData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        if (response.status === 404) {
+          throw new Error('Script não encontrado');
+        }
+        
+        if (response.status === 400) {
+          throw new Error(errorData.details ? 
+            errorData.details.map((d: any) => d.msg).join(', ') : 
+            errorData.error || 'Dados inválidos'
+          );
+        }
+        
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao atualizar script');
+      }
+
+      console.log('✅ Script atualizado com sucesso:', scriptId);
+      this.emit('scriptUpdated', result.data);
+      
+      return result.data;
+    } catch (error) {
+      console.error('❌ Erro ao atualizar script:', error);
+      this.emit('scriptError', { operation: 'update', error, scriptId });
+      throw error;
+    }
+  }
+
+  /**
+   * Busca um script por ID
+   */
+  async getScript(scriptId: string): Promise<Script> {
+    try {
+      console.log('🔍 Buscando script:', scriptId);
+      
+      const response = await fetch(`/api/scripts/${scriptId}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Script não encontrado');
+        }
+        
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao buscar script');
+      }
+
+      return result.data;
+    } catch (error) {
+      console.error('❌ Erro ao buscar script:', error);
+      this.emit('scriptError', { operation: 'get', error, scriptId });
+      throw error;
+    }
+  }
+
+  /**
+   * Lista todos os scripts com filtros opcionais
+   */
+  async getScripts(options: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    search?: string;
+    tags?: string[];
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  } = {}): Promise<{
+    scripts: Script[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      pages: number;
+    };
+  }> {
+    try {
+      console.log('📋 Listando scripts com filtros:', options);
+      
+      const params = new URLSearchParams();
+      
+      if (options.page) params.append('page', options.page.toString());
+      if (options.limit) params.append('limit', options.limit.toString());
+      if (options.status) params.append('status', options.status);
+      if (options.search) params.append('search', options.search);
+      if (options.tags?.length) params.append('tags', options.tags.join(','));
+      if (options.sortBy) params.append('sortBy', options.sortBy);
+      if (options.sortOrder) params.append('sortOrder', options.sortOrder);
+      
+      const response = await fetch(`/api/scripts?${params.toString()}`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao listar scripts');
+      }
+
+      return {
+        scripts: result.data,
+        pagination: result.pagination
+      };
+    } catch (error) {
+      console.error('❌ Erro ao listar scripts:', error);
+      this.emit('scriptError', { operation: 'list', error });
+      throw error;
+    }
+  }
+
+  /**
+   * Deleta um script
+   */
+  async deleteScript(scriptId: string): Promise<void> {
+    try {
+      console.log('🗑️ Deletando script:', scriptId);
+      
+      const response = await fetch(`/api/scripts/${scriptId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Script não encontrado');
+        }
+        
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao deletar script');
+      }
+
+      console.log('✅ Script deletado com sucesso:', scriptId);
+      this.emit('scriptDeleted', { scriptId });
+      
+    } catch (error) {
+      console.error('❌ Erro ao deletar script:', error);
+      this.emit('scriptError', { operation: 'delete', error, scriptId });
+      throw error;
+    }
+  }
   disconnect() {
     console.log('🔌 Desconectando WebSocket...');
     this.stopHeartbeat();

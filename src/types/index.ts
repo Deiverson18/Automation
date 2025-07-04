@@ -10,6 +10,14 @@ export interface Script {
   status: 'draft' | 'active' | 'disabled';
 }
 
+export interface ScriptInput {
+  name: string;
+  description: string;
+  code: string;
+  tags: string[];
+  status: 'draft' | 'active' | 'disabled';
+  parameters: Record<string, any>;
+}
 export interface Execution {
   id: string;
   scriptId: string;
