@@ -10,7 +10,7 @@ require('dotenv').config();
 
 // Importar módulos customizados
 const WebSocketManager = require('./websocketManager');
-const ExecutionEngine = require('./executionEngine');
+const DockerExecutionEngine = require('./dockerExecutionEngine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,16 +49,61 @@ const logger = winston.createLogger({
   ]
 });
 
-// Inicializar WebSocket Manager
-const websocketManager = new WebSocketManager(WS_PORT);
-websocketManager.start();
+// Verificar se Docker está disponível
+async function checkDockerAvailability() {
+  return new Promise((resolve) => {
+    const { spawn } = require('child_process');
+    const dockerProcess = spawn('docker', ['--version'], { stdio: 'ignore' });
+    
+    dockerProcess.on('close', (code) => {
+      resolve(code === 0);
+    });
+    
+    dockerProcess.on('error', () => {
+      resolve(false);
+    });
+  });
+}
 
-// Inicializar Execution Engine
-const executionEngine = new ExecutionEngine(websocketManager);
+// Inicializar sistema
+async function initializeSystem() {
+  try {
+    // Verificar Docker
+    const dockerAvailable = await checkDockerAvailability();
+    if (!dockerAvailable) {
+      logger.error('❌ Docker não está disponível! O sistema funcionará em modo limitado.');
+      logger.info('💡 Para segurança máxima, instale o Docker e reinicie o sistema.');
+    } else {
+      logger.info('✅ Docker detectado e disponível');
+    }
 
-// Disponibilizar instâncias para as rotas
-app.locals.websocketManager = websocketManager;
-app.locals.executionEngine = executionEngine;
+    // Inicializar WebSocket Manager
+    const websocketManager = new WebSocketManager(WS_PORT);
+    websocketManager.start();
+
+    // Inicializar Execution Engine (Docker ou fallback)
+    let executionEngine;
+    if (dockerAvailable) {
+      logger.info('🐳 Inicializando Docker Execution Engine...');
+      executionEngine = new DockerExecutionEngine(websocketManager);
+    } else {
+      logger.warn('⚠️ Usando Execution Engine sem isolamento Docker');
+      const ExecutionEngine = require('./executionEngine');
+      executionEngine = new ExecutionEngine(websocketManager);
+    }
+
+    // Disponibilizar instâncias para as rotas
+    app.locals.websocketManager = websocketManager;
+    app.locals.executionEngine = executionEngine;
+    app.locals.dockerAvailable = dockerAvailable;
+
+    logger.info('🚀 Sistema inicializado com sucesso');
+    
+  } catch (error) {
+    logger.error('❌ Erro na inicialização do sistema:', error);
+    process.exit(1);
+  }
+}
 
 // Middleware de segurança
 app.use(helmet({
@@ -93,8 +138,18 @@ const authLimiter = rateLimit({
   }
 });
 
+// Rate limiting específico para execuções (mais restritivo)
+const executionLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 10, // máximo 10 execuções por IP
+  message: {
+    error: 'Muitas execuções solicitadas, tente novamente em 5 minutos.'
+  }
+});
+
 app.use(limiter);
 app.use('/api/auth', authLimiter);
+app.use('/api/executions', executionLimiter);
 
 // Middleware básico
 app.use(compression());
@@ -102,8 +157,8 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || true,
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' })); // Reduzido para segurança
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Logging de requisições
 app.use(morgan('combined', {
@@ -126,17 +181,47 @@ app.get('/health', (req, res) => {
       websocket: {
         status: 'running',
         port: WS_PORT,
-        connections: websocketManager.getConnectionCount()
+        connections: app.locals.websocketManager?.getConnectionCount() || 0
       },
       executionEngine: {
         status: 'running',
-        activeExecutions: executionEngine.getAllExecutions().filter(e => e.status === 'running').length
+        type: app.locals.dockerAvailable ? 'docker' : 'standard',
+        activeExecutions: app.locals.executionEngine?.getAllExecutions().filter(e => e.status === 'running').length || 0,
+        stats: app.locals.executionEngine?.getSystemStats ? app.locals.executionEngine.getSystemStats() : {}
+      },
+      docker: {
+        available: app.locals.dockerAvailable,
+        status: app.locals.dockerAvailable ? 'available' : 'not_available'
       }
     }
   };
   
   logger.info('Health check accessed', healthCheck);
   res.status(200).json(healthCheck);
+});
+
+// Endpoint de status do sistema
+app.get('/api/system/status', (req, res) => {
+  const systemStatus = {
+    docker: {
+      available: app.locals.dockerAvailable,
+      securityLevel: app.locals.dockerAvailable ? 'high' : 'medium'
+    },
+    executionEngine: {
+      type: app.locals.dockerAvailable ? 'docker-isolated' : 'standard',
+      stats: app.locals.executionEngine?.getSystemStats ? app.locals.executionEngine.getSystemStats() : {}
+    },
+    security: {
+      isolation: app.locals.dockerAvailable ? 'container-based' : 'process-based',
+      networkAccess: app.locals.dockerAvailable ? 'blocked' : 'limited',
+      fileSystemAccess: app.locals.dockerAvailable ? 'read-only' : 'sandboxed'
+    }
+  };
+
+  res.json({
+    success: true,
+    data: systemStatus
+  });
 });
 
 // API Routes
@@ -196,26 +281,36 @@ app.use((req, res) => {
 });
 
 // Graceful shutdown
-const gracefulShutdown = () => {
+const gracefulShutdown = async () => {
   logger.info('Iniciando shutdown gracioso...');
   
-  // Parar WebSocket server
-  websocketManager.stop();
-  
-  // Cleanup do execution engine
-  executionEngine.cleanup();
-  
-  // Fechar servidor HTTP
-  server.close(() => {
-    logger.info('Servidor HTTP fechado');
-    process.exit(0);
-  });
-  
-  // Forçar saída após 10 segundos
-  setTimeout(() => {
-    logger.error('Forçando saída após timeout');
+  try {
+    // Parar WebSocket server
+    if (app.locals.websocketManager) {
+      app.locals.websocketManager.stop();
+    }
+    
+    // Cleanup do execution engine
+    if (app.locals.executionEngine) {
+      await app.locals.executionEngine.cleanup();
+    }
+    
+    // Fechar servidor HTTP
+    server.close(() => {
+      logger.info('Servidor HTTP fechado');
+      process.exit(0);
+    });
+    
+    // Forçar saída após 15 segundos (mais tempo para Docker cleanup)
+    setTimeout(() => {
+      logger.error('Forçando saída após timeout');
+      process.exit(1);
+    }, 15000);
+    
+  } catch (error) {
+    logger.error('Erro durante shutdown:', error);
     process.exit(1);
-  }, 10000);
+  }
 };
 
 process.on('SIGTERM', gracefulShutdown);
@@ -232,14 +327,20 @@ process.on('unhandledRejection', (reason, promise) => {
   gracefulShutdown();
 });
 
-// Iniciar servidor
-const server = app.listen(PORT, '0.0.0.0', () => {
-  logger.info(`🚀 Playwright Hub Backend rodando em http://0.0.0.0:${PORT}`);
-  logger.info(`🔌 WebSocket Server rodando na porta ${WS_PORT}`);
-  logger.info(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
-  logger.info(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`📝 Logs: ${logsDir}`);
-  logger.info(`🎭 Playwright Engine: Ativo`);
+// Inicializar e iniciar servidor
+initializeSystem().then(() => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    logger.info(`🚀 Playwright Hub Backend rodando em http://0.0.0.0:${PORT}`);
+    logger.info(`🔌 WebSocket Server rodando na porta ${WS_PORT}`);
+    logger.info(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
+    logger.info(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`📝 Logs: ${logsDir}`);
+    logger.info(`🎭 Execution Engine: ${app.locals.dockerAvailable ? 'Docker (Isolado)' : 'Standard'}`);
+    logger.info(`🔒 Nível de Segurança: ${app.locals.dockerAvailable ? 'ALTO' : 'MÉDIO'}`);
+  });
+}).catch(error => {
+  logger.error('Falha na inicialização:', error);
+  process.exit(1);
 });
 
 module.exports = app;

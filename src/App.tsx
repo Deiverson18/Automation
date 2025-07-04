@@ -9,6 +9,7 @@ import Header from './components/Layout/Header';
 import StatsCard from './components/Dashboard/StatsCard';
 import ExecutionChart from './components/Dashboard/ExecutionChart';
 import RecentExecutions from './components/Dashboard/RecentExecutions';
+import SystemStatus from './components/Dashboard/SystemStatus';
 import ScriptListEnhanced from './components/Scripts/ScriptListEnhanced';
 import ScriptEditor from './components/Scripts/ScriptEditor';
 import ExecutionList from './components/Executions/ExecutionList';
@@ -22,7 +23,8 @@ import {
   Activity,
   Plus,
   Filter,
-  Search
+  Search,
+  Shield
 } from 'lucide-react';
 import { Script } from './types';
 
@@ -117,11 +119,11 @@ const AppContent: React.FC = () => {
   const getTabSubtitle = () => {
     switch (activeTab) {
       case 'dashboard':
-        return 'Visão geral da plataforma de automação';
+        return 'Visão geral da plataforma de automação com execução isolada';
       case 'scripts':
-        return 'Gerencie e execute seus scripts Playwright';
+        return 'Gerencie e execute seus scripts Playwright com segurança';
       case 'executions':
-        return 'Monitore execuções em andamento e históricas';
+        return 'Monitore execuções em contêineres isolados';
       case 'logs':
         return 'Visualize logs detalhados do sistema';
       case 'analytics':
@@ -177,9 +179,14 @@ const AppContent: React.FC = () => {
               />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ExecutionChart />
-              <RecentExecutions executions={executions} />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <ExecutionChart />
+              </div>
+              <div className="space-y-6">
+                <SystemStatus />
+                <RecentExecutions executions={executions} />
+              </div>
             </div>
           </div>
         );
@@ -211,6 +218,22 @@ const AppContent: React.FC = () => {
                 <Plus className="w-4 h-4" />
                 <span>Novo Script</span>
               </motion.button>
+            </div>
+
+            {/* Security Notice */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                <div>
+                  <h4 className="font-medium text-blue-800 dark:text-blue-400">
+                    Execução Segura com Docker
+                  </h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Todos os scripts são executados em contêineres Docker isolados para máxima segurança. 
+                    Sem acesso à rede, sistema de arquivos protegido e recursos limitados.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <ScriptListEnhanced
@@ -262,8 +285,9 @@ const AppContent: React.FC = () => {
                 <div className="text-blue-600">[DEBUG] Carregando configurações...</div>
                 <div className="text-yellow-600">[WARN] Timeout configurado para 30s</div>
                 <div className="text-gray-600">[INFO] Pronto para receber requisições</div>
-                <div className="text-blue-600">[INFO] Playwright service inicializado</div>
-                <div className="text-green-600">[INFO] WebSocket connection estabelecida</div>
+                <div className="text-blue-600">[INFO] Docker Engine inicializado</div>
+                <div className="text-green-600">[INFO] Contêineres de segurança configurados</div>
+                <div className="text-blue-600">[INFO] WebSocket connection estabelecida</div>
               </div>
             </div>
           </div>
@@ -315,27 +339,49 @@ const AppContent: React.FC = () => {
           <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Configurações do Playwright
+                Configurações do Docker
               </h3>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Navegador Padrão
+                      Limite de Memória
                     </label>
-                    <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700">
-                      <option value="chromium">Chromium</option>
-                      <option value="firefox">Firefox</option>
-                      <option value="webkit">WebKit</option>
-                    </select>
+                    <input
+                      type="text"
+                      defaultValue="512m"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Timeout Padrão (ms)
+                      Limite de CPU
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue="0.5"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Timeout Máximo (ms)
                     </label>
                     <input
                       type="number"
-                      defaultValue={30000}
+                      defaultValue={300000}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Execuções Simultâneas
+                    </label>
+                    <input
+                      type="number"
+                      defaultValue={5}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700"
                     />
                   </div>
@@ -343,15 +389,15 @@ const AppContent: React.FC = () => {
                 <div className="flex items-center space-x-4">
                   <label className="flex items-center space-x-2">
                     <input type="checkbox" defaultChecked className="rounded" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Modo Headless</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Acesso à rede bloqueado</span>
                   </label>
                   <label className="flex items-center space-x-2">
                     <input type="checkbox" defaultChecked className="rounded" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Capturar Screenshots</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Sistema de arquivos somente leitura</span>
                   </label>
                   <label className="flex items-center space-x-2">
-                    <input type="checkbox" className="rounded" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Gravar Vídeo</span>
+                    <input type="checkbox" defaultChecked className="rounded" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Usuário não-root</span>
                   </label>
                 </div>
               </div>

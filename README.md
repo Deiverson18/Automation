@@ -1,298 +1,310 @@
-# Guia de Configuração Windows - Node.js v18 + NGINX
+# Playwright Hub - Plataforma de Automação Segura
 
-Uma configuração completa para ambiente de produção no Windows com Node.js e NGINX como proxy reverso.
+Uma plataforma completa para automação com Playwright que executa scripts em **contêineres Docker isolados** para máxima segurança.
 
-## 🎯 Requisitos do Sistema
+## 🔒 Segurança Máxima com Docker
 
-- **Sistema Operacional**: Windows 10/11 ou Windows Server
-- **Node.js**: Versão 18.x (LTS)
-- **NGINX**: Versão mais recente para Windows
-- **Privilégios**: Acesso de Administrador
-- **Portas**: 80 (NGINX), 3000 (Backend)
+### **Isolamento Completo**
+- **Contêineres isolados**: Cada script executa em seu próprio contêiner Docker
+- **Sem acesso à rede**: Contêineres executam com `--network none`
+- **Sistema de arquivos somente leitura**: `--read-only` para prevenir modificações
+- **Usuário não-root**: Execução com usuário `playwright:playwright`
+- **Recursos limitados**: Memória (512MB) e CPU (0.5 cores) limitados
 
-## 📁 Estrutura do Projeto
+### **Proteções de Segurança**
+- **Sanitização de código**: Remoção automática de comandos perigosos
+- **Timeout rigoroso**: Execuções limitadas a 5 minutos
+- **Capabilities mínimas**: Apenas `SYS_ADMIN` para Playwright
+- **Tmpfs limitado**: Diretório temporário com 100MB máximo
+- **Rate limiting**: Proteção contra abuso de recursos
 
-```
-playwright-automation-platform/
-├── backend/                 # Servidor Node.js (Express)
-│   ├── package.json
-│   ├── server.js
-│   └── routes/
-├── frontend/               # Aplicação React/SPA
-│   ├── package.json
-│   ├── src/
-│   └── dist/              # Build de produção
-├── config/
-│   ├── nginx.conf         # Configuração NGINX
-│   ├── pm2.config.js      # Gerenciamento de processos
-│   └── windows.conf       # Configurações específicas Windows
-├── scripts/
-│   ├── install.bat        # Script de instalação
-│   ├── start.bat          # Script de inicialização
-│   ├── stop.bat           # Script para parar serviços
-│   └── restart.bat        # Script de reinicialização
-├── logs/                  # Diretório de logs
-└── README.md
-```
+## 🚀 Funcionalidades
 
-## 🚀 Instalação Rápida
+### **Interface do Usuário**
+- Dashboard com métricas em tempo real
+- Editor de scripts com syntax highlighting
+- Monitor de execuções com logs ao vivo
+- Sistema de notificações WebSocket
+- Tema claro/escuro
 
-### 1. Pré-requisitos
+### **Execução de Scripts**
+- Execução paralela em contêineres isolados
+- Captura automática de screenshots
+- Logs detalhados em tempo real
+- Cancelamento de execuções
+- Histórico completo
 
-**Instalar Node.js v18:**
+### **Monitoramento**
+- Status de segurança do sistema
+- Métricas de performance
+- Logs centralizados
+- Analytics de uso
+
+## 📋 Requisitos
+
+### **Sistema**
+- **Docker**: Versão 20.10+ (obrigatório para segurança máxima)
+- **Node.js**: Versão 18+ 
+- **Sistema Operacional**: Linux, macOS, Windows com WSL2
+
+### **Recursos Mínimos**
+- **RAM**: 4GB (recomendado 8GB)
+- **CPU**: 2 cores (recomendado 4 cores)
+- **Disco**: 10GB livres
+- **Rede**: Conexão para download de imagens Docker
+
+## 🛠️ Instalação
+
+### **1. Pré-requisitos**
+
+**Instalar Docker:**
 ```bash
-# Baixar de: https://nodejs.org/en/download/
-# Verificar instalação:
-node -v
-npm -v
+# Ubuntu/Debian
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker $USER
+
+# Reiniciar sessão ou executar:
+newgrp docker
 ```
 
-**Instalar NGINX para Windows:**
+**Verificar Docker:**
 ```bash
-# Baixar de: http://nginx.org/en/download.html
-# Extrair para: C:\nginx
+docker --version
+docker run hello-world
 ```
 
-### 2. Configuração Automática
+### **2. Configuração do Projeto**
 
-Execute como **Administrador**:
-```batch
-# Clone o projeto
+```bash
+# Clone o repositório
 git clone <repositorio>
 cd playwright-automation-platform
 
-# Execute o script de instalação
-scripts\install.bat
-```
-
-### 3. Inicialização
-
-```batch
-# Iniciar todos os serviços
-scripts\start.bat
-
-# Ou individualmente:
-scripts\start-backend.bat
-scripts\start-nginx.bat
-```
-
-## 🔧 Configuração Manual
-
-### Backend (Node.js + Express)
-
-O backend já está configurado e rodando na porta 3000. Para verificar:
-
-```bash
+# Instalar dependências do backend
 cd backend
 npm install
+
+# Voltar para raiz e instalar frontend
+cd ..
+npm install
+
+# Build do frontend
+npm run build
+```
+
+### **3. Inicialização**
+
+```bash
+# Iniciar o sistema
+cd backend
 npm start
 ```
 
-### Frontend (React Build)
+O sistema irá:
+1. ✅ Verificar disponibilidade do Docker
+2. 🐳 Construir imagem Docker do Playwright
+3. 🔌 Inicializar WebSocket server
+4. 🚀 Iniciar servidor HTTP
 
-O frontend já foi buildado e está na pasta `dist/`. Para rebuildar:
+## 🔧 Configuração
 
+### **Variáveis de Ambiente**
+
+Crie um arquivo `.env` no diretório `backend/`:
+
+```env
+NODE_ENV=production
+PORT=3000
+WS_PORT=3001
+LOG_LEVEL=info
+
+# Configurações Docker
+DOCKER_MEMORY_LIMIT=512m
+DOCKER_CPU_LIMIT=0.5
+DOCKER_TIMEOUT=300000
+MAX_CONCURRENT_EXECUTIONS=5
+
+# Segurança
+RATE_LIMIT_WINDOW=900000
+RATE_LIMIT_MAX=100
+EXECUTION_RATE_LIMIT=10
+```
+
+### **Configurações de Segurança Docker**
+
+As configurações padrão incluem:
+
+```javascript
+securityConfig: {
+  memory: '512m',           // Limite de memória
+  cpus: '0.5',             // Limite de CPU  
+  networkMode: 'none',     // Sem acesso à rede
+  readOnly: true,          // Sistema de arquivos somente leitura
+  noNewPrivileges: true,   // Sem novos privilégios
+  user: 'playwright:playwright', // Usuário não-root
+  timeout: 300000          // Timeout de 5 minutos
+}
+```
+
+## 🌐 Acesso
+
+### **URLs Principais**
+- **Dashboard**: http://localhost:3000
+- **API Health**: http://localhost:3000/health
+- **WebSocket**: ws://localhost:3001
+
+### **Credenciais Padrão**
+- **Usuário**: `admin`
+- **Senha**: `admin`
+
+## 📊 Monitoramento
+
+### **Health Check**
 ```bash
-npm run build
+curl http://localhost:3000/health
 ```
 
-### NGINX como Proxy Reverso
-
-1. **Copiar configuração:**
-```batch
-copy config\nginx.conf C:\nginx\conf\nginx.conf
-```
-
-2. **Iniciar NGINX:**
-```batch
-cd C:\nginx
-start nginx
-```
-
-3. **Verificar status:**
-```batch
-tasklist /fi "imagename eq nginx.exe"
-```
-
-## 🌐 Acesso ao Sistema
-
-### URLs de Acesso
-
-- **Local**: http://localhost ou http://127.0.0.1
-- **Rede Local**: http://SEU_IP_LOCAL
-- **Rede Externa**: http://SEU_IP_EXTERNO
-
-### Verificação de Conectividade
-
-```batch
-# Verificar portas abertas
-netstat -an | findstr :80
-netstat -an | findstr :3000
-
-# Testar conectividade
-curl http://localhost
-curl http://localhost/api/health
-```
-
-## 🛠️ Gerenciamento de Serviços
-
-### PM2 (Gerenciador de Processos)
-
+### **Status do Sistema**
 ```bash
-# Instalar PM2 globalmente
-npm install -g pm2
-
-# Iniciar aplicação
-pm2 start config\pm2.config.js
-
-# Monitorar
-pm2 monit
-
-# Logs
-pm2 logs
-
-# Reiniciar
-pm2 restart all
-
-# Parar
-pm2 stop all
+curl http://localhost:3000/api/system/status
 ```
 
-### NGINX
+### **Logs**
+```bash
+# Logs do backend
+tail -f backend/logs/backend.log
 
-```batch
-# Iniciar
-cd C:\nginx && start nginx
+# Logs do Docker
+tail -f backend/logs/docker-execution.log
 
-# Recarregar configuração
-nginx -s reload
-
-# Parar
-nginx -s quit
-
-# Verificar configuração
-nginx -t
+# Logs do WebSocket
+tail -f backend/logs/websocket.log
 ```
 
-## 🔒 Configuração de Firewall
+## 🔍 Solução de Problemas
 
-### Windows Firewall
+### **Docker não disponível**
+```bash
+# Verificar status do Docker
+systemctl status docker
 
-```batch
-# Permitir porta 80 (HTTP)
-netsh advfirewall firewall add rule name="HTTP Port 80" dir=in action=allow protocol=TCP localport=80
+# Iniciar Docker
+sudo systemctl start docker
 
-# Permitir porta 3000 (Backend)
-netsh advfirewall firewall add rule name="Node.js Port 3000" dir=in action=allow protocol=TCP localport=3000
-
-# Verificar regras
-netsh advfirewall firewall show rule name="HTTP Port 80"
+# Verificar permissões
+docker ps
 ```
 
-## 📊 Monitoramento e Logs
-
-### Localização dos Logs
-
-- **Backend**: `logs/backend.log`
-- **NGINX**: `C:\nginx\logs\access.log` e `C:\nginx\logs\error.log`
-- **PM2**: `%USERPROFILE%\.pm2\logs\`
-
-### Comandos de Monitoramento
-
-```batch
-# Verificar processos
-tasklist | findstr node
-tasklist | findstr nginx
-
-# Monitorar logs em tempo real
-tail -f logs\backend.log
-tail -f C:\nginx\logs\access.log
+### **Erro de permissões**
+```bash
+# Adicionar usuário ao grupo docker
+sudo usermod -aG docker $USER
+newgrp docker
 ```
 
-## 🚨 Solução de Problemas
+### **Porta em uso**
+```bash
+# Verificar portas ocupadas
+netstat -tulpn | grep :3000
+netstat -tulpn | grep :3001
 
-### Problemas Comuns
-
-**1. Porta 80 já em uso:**
-```batch
-# Verificar processo usando porta 80
-netstat -ano | findstr :80
-# Parar IIS se necessário
-iisreset /stop
+# Matar processos se necessário
+sudo kill -9 <PID>
 ```
 
-**2. Node.js não encontrado:**
-```batch
-# Verificar PATH
-echo %PATH%
-# Reinstalar Node.js se necessário
+### **Limpeza de contêineres**
+```bash
+# Remover contêineres parados
+docker container prune
+
+# Remover imagens não utilizadas
+docker image prune
+
+# Limpeza completa
+docker system prune -a
 ```
 
-**3. NGINX não inicia:**
-```batch
-# Verificar configuração
-cd C:\nginx
-nginx -t
-# Verificar logs de erro
-type logs\error.log
-```
+## 🚨 Segurança
 
-### Comandos de Diagnóstico
+### **Níveis de Segurança**
 
-```batch
-# Status geral do sistema
-scripts\status.bat
+1. **Alto (Docker disponível)**:
+   - Execução em contêineres isolados
+   - Sem acesso à rede
+   - Sistema de arquivos protegido
+   - Recursos limitados
 
-# Teste de conectividade
-scripts\test-connectivity.bat
+2. **Médio (Sem Docker)**:
+   - Execução em processos separados
+   - Sanitização de código
+   - Timeouts rigorosos
+   - Rate limiting
 
-# Limpeza de logs
-scripts\clean-logs.bat
-```
+### **Práticas Recomendadas**
 
-## 🔄 Atualizações e Manutenção
+- ✅ Sempre usar Docker em produção
+- ✅ Monitorar logs regularmente
+- ✅ Atualizar imagens Docker
+- ✅ Configurar firewall adequadamente
+- ✅ Usar HTTPS em produção
 
-### Atualização da Aplicação
+### **Sanitização de Código**
 
-```batch
-# Parar serviços
-scripts\stop.bat
+O sistema remove automaticamente:
+- `require('fs')`, `require('child_process')`
+- `process.*`, `global.*`
+- `eval()`, `Function()`
+- `setTimeout()`, `setInterval()`
 
-# Atualizar código
+## 📈 Performance
+
+### **Métricas Monitoradas**
+- Tempo médio de execução
+- Taxa de sucesso
+- Uso de recursos
+- Execuções simultâneas
+
+### **Otimizações**
+- Pool de contêineres reutilizáveis
+- Cache de imagens Docker
+- Compressão de logs
+- Cleanup automático
+
+## 🔄 Atualizações
+
+### **Atualizar Sistema**
+```bash
 git pull origin main
-
-# Rebuildar frontend
+npm install
 npm run build
-
-# Reiniciar serviços
-scripts\start.bat
 ```
 
-### Backup
-
-```batch
-# Backup automático
-scripts\backup.bat
-
-# Restaurar backup
-scripts\restore.bat YYYY-MM-DD
+### **Atualizar Imagem Docker**
+```bash
+cd backend
+docker build -t playwright-runner:latest docker/
 ```
 
-## 📞 Suporte e Documentação
+## 📞 Suporte
 
-### URLs Importantes
+### **Logs Importantes**
+- `backend/logs/backend.log` - Logs gerais
+- `backend/logs/docker-execution.log` - Execuções Docker
+- `backend/logs/websocket.log` - Comunicação WebSocket
 
-- **Dashboard**: http://localhost/dashboard
-- **API Health**: http://localhost/api/health
-- **Documentação API**: http://localhost/api/docs
-- **Logs Web**: http://localhost/logs
+### **Comandos de Debug**
+```bash
+# Status dos contêineres
+docker ps -a
 
-### Contatos
+# Logs de um contêiner específico
+docker logs <container_id>
 
-- **Suporte Técnico**: suporte@playwright-platform.com
-- **Documentação**: https://docs.playwright-platform.com
-- **Issues**: https://github.com/projeto/issues
+# Estatísticas de recursos
+docker stats
+```
 
 ---
 
-**Desenvolvido para ambiente Windows de produção** 🚀
+**Desenvolvido com foco em segurança máxima** 🔒🐳
