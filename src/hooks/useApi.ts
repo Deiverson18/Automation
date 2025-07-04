@@ -28,7 +28,7 @@ const mockScripts: Script[] = [
       username: 'testuser',
       password: 'testpass',
       url: 'https://example.com/login'
-    },
+    } as any, // Temporário para compatibilidade
     createdAt: '2024-01-15T10:30:00Z',
     updatedAt: '2024-01-20T14:15:00Z',
     tags: ['login', 'authentication', 'web'],
@@ -69,7 +69,7 @@ const { chromium } = require('playwright');
       email: 'test@example.com',
       firstName: 'John',
       lastName: 'Doe'
-    },
+    } as any, // Temporário para compatibilidade
     createdAt: '2024-01-18T09:00:00Z',
     updatedAt: '2024-01-22T11:30:00Z',
     tags: ['e-commerce', 'checkout', 'shopping'],
@@ -103,7 +103,7 @@ const { chromium } = require('playwright');
     parameters: {
       formUrl: 'https://forms.example.com/contact',
       testEmail: 'invalid-email'
-    },
+    } as any, // Temporário para compatibilidade
     createdAt: '2024-01-20T16:45:00Z',
     updatedAt: '2024-01-20T16:45:00Z',
     tags: ['form', 'validation', 'testing'],

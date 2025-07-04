@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Save, X, Play, FileText, Tag, Settings, Code, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import { Script } from '../../types';
+import { Script, ScriptParameter } from '../../types';
 import ScriptTemplates from './ScriptTemplates';
+import ParameterManager from './ParameterManager';
 
 interface ScriptEditorProps {
   script?: Script;
@@ -23,7 +24,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
     code: '',
     tags: [] as string[],
     status: 'draft' as 'draft' | 'active' | 'disabled',
-    parameters: {} as Record<string, any>
+    parameters: [] as ScriptParameter[]
   });
 
   const [newTag, setNewTag] = useState('');
@@ -43,7 +44,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
         code: script.code,
         tags: script.tags,
         status: script.status,
-        parameters: script.parameters
+        parameters: Array.isArray(script.parameters) ? script.parameters : []
       });
     } else {
       setFormData({
@@ -52,7 +53,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
         code: '',
         tags: [],
         status: 'draft',
-        parameters: {}
+        parameters: []
       });
     }
     
@@ -90,6 +91,32 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
     // Validar tags
     if (formData.tags.length > 10) {
       newErrors.tags = 'Máximo de 10 tags permitidas';
+    }
+
+    // Validar parâmetros
+    const parameterErrors: string[] = [];
+    const parameterKeys = new Set<string>();
+    
+    formData.parameters.forEach((param, index) => {
+      // Validar nome do parâmetro
+      if (!param.key.trim()) {
+        parameterErrors.push(`Parâmetro ${index + 1}: Nome é obrigatório`);
+      } else if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(param.key)) {
+        parameterErrors.push(`Parâmetro ${index + 1}: Nome inválido (use apenas letras, números e _)`);
+      } else if (parameterKeys.has(param.key)) {
+        parameterErrors.push(`Parâmetro ${index + 1}: Nome duplicado`);
+      } else {
+        parameterKeys.add(param.key);
+      }
+
+      // Validar valor do parâmetro
+      if (param.type === 'number' && isNaN(Number(param.value))) {
+        parameterErrors.push(`Parâmetro ${param.key || index + 1}: Valor deve ser um número`);
+      }
+    });
+
+    if (parameterErrors.length > 0) {
+      newErrors.parameters = parameterErrors.join('; ');
     }
 
     setErrors(newErrors);
@@ -263,15 +290,6 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
             </p>
           </div>
 
-          <button
-            onClick={onCancel}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-120px)]">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -375,6 +393,14 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
               <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.tags}</p>
             )}
           </div>
+
+          {/* Gerenciador de Parâmetros */}
+          <ParameterManager
+            parameters={formData.parameters}
+            onChange={(parameters) => handleInputChange('parameters', parameters)}
+            errors={errors}
+            disabled={isLoading}
+          />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

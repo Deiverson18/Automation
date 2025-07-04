@@ -38,10 +38,18 @@ const ExecutionButton: React.FC<ExecutionButtonProps> = ({
         timeout: config.timeout
       });
 
+      // Converter parâmetros para formato de execução
+      const executionParameters = Array.isArray(script.parameters) 
+        ? script.parameters.reduce((acc, param) => {
+            acc[param.key] = param.value;
+            return acc;
+          }, {} as Record<string, any>)
+        : script.parameters || {};
+
       const executionId = await playwrightService.executeScript(
         script.id,
         script.code,
-        script.parameters
+        executionParameters
       );
 
       onExecutionStart?.(executionId);
