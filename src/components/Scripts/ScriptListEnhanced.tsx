@@ -14,6 +14,17 @@ import {
 import { Script } from '../../types';
 import ExecutionButton from './ExecutionButton';
 
+// Função auxiliar para converter parâmetros
+const convertParametersToObject = (parameters: any): Record<string, any> => {
+  if (Array.isArray(parameters)) {
+    return parameters.reduce((acc, param) => {
+      acc[param.key] = param.value;
+      return acc;
+    }, {} as Record<string, any>);
+  }
+  return parameters || {};
+};
+
 interface ScriptListEnhancedProps {
   scripts: Script[];
   onEdit: (script: Script) => void;

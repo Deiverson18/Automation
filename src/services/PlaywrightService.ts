@@ -38,6 +38,8 @@ class PlaywrightService extends EventEmitter {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private heartbeatInterval: number | null = null;
+  private scripts: Script[] = [];
+  private systemStats: SystemStats | null = null;
   private config: PlaywrightConfig = {
     timeout: 30000,
     headless: true,
@@ -50,6 +52,22 @@ class PlaywrightService extends EventEmitter {
   constructor() {
     super();
     this.connectWebSocket();
+  }
+
+  // === GETTERS ===
+  
+  /**
+   * Retorna os scripts em cache
+   */
+  getCachedScripts(): Script[] {
+    return [...this.scripts];
+  }
+  
+  /**
+   * Retorna as estatísticas do sistema em cache
+   */
+  getCachedStats(): SystemStats | null {
+    return this.systemStats;
   }
 
   private connectWebSocket() {
@@ -285,17 +303,21 @@ class PlaywrightService extends EventEmitter {
       const executionId = result.data.id;
 
       // Criar execução local
-      const execution: PlaywrightExecution = {
+      const execution: Execution = {
         id: executionId,
         scriptId,
+        scriptName: '',  // Será preenchido pelo backend
         status: 'pending',
         startTime: new Date(),
+        parameters,
         progress: 0,
-        logs: [],
-        screenshots: []
+        logs: [{
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          message: 'Execução iniciada'
+        }]
       };
 
-      this.executions.set(executionId, execution);
       this.emit('executionCreated', execution);
 
       // Inscrever-se para receber atualizações via WebSocket
@@ -488,6 +510,9 @@ class PlaywrightService extends EventEmitter {
       }
 
       console.log('✅ Script criado com sucesso:', result.data.id);
+      
+      // Atualizar cache local
+      this.scripts = [result.data, ...this.scripts];
       this.emit('scriptCreated', result.data);
       
       return result.data;
@@ -537,6 +562,11 @@ class PlaywrightService extends EventEmitter {
       }
 
       console.log('✅ Script atualizado com sucesso:', scriptId);
+      
+      // Atualizar cache local
+      this.scripts = this.scripts.map(script => 
+        script.id === scriptId ? result.data : script
+      );
       this.emit('scriptUpdated', result.data);
       
       return result.data;
@@ -620,6 +650,7 @@ class PlaywrightService extends EventEmitter {
       }
 
       const result = await response.json();
+      this.scripts = result.data;
       
       if (!result.success) {
         throw new Error(result.error || 'Falha ao listar scripts');
@@ -663,6 +694,9 @@ class PlaywrightService extends EventEmitter {
       }
 
       console.log('✅ Script deletado com sucesso:', scriptId);
+      
+      // Atualizar cache local
+      this.scripts = this.scripts.filter(script => script.id !== scriptId);
       this.emit('scriptDeleted', { scriptId });
       
     } catch (error) {
@@ -692,6 +726,10 @@ class PlaywrightService extends EventEmitter {
       ]);
       
       console.log('✅ Dados carregados com sucesso');
+      
+      // Atualizar cache local
+      this.scripts = scriptsResult.scripts;
+      this.systemStats = stats;
       
       return {
         scripts: scriptsResult.scripts,

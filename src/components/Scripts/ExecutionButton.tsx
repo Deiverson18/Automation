@@ -41,7 +41,9 @@ const ExecutionButton: React.FC<ExecutionButtonProps> = ({
       // Converter parâmetros para formato de execução
       const executionParameters = Array.isArray(script.parameters) 
         ? script.parameters.reduce((acc, param) => {
-            acc[param.key] = param.value;
+            if (param.key) {
+              acc[param.key] = param.value;
+            }
             return acc;
           }, {} as Record<string, any>)
         : script.parameters || {};
